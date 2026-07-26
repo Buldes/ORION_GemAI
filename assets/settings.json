@@ -1,0 +1,13 @@
+{
+  "gemini_version": "gemini-3.5-flash-lite",
+
+  "send_history": true,
+  "auto_python_execution": true,
+
+  "use_stt": false,
+  "stt_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30},
+  "activation_sound": true,
+  "active_words": ["Ja? ", "Joo", "Ich Höre ", "Yup"],
+
+  "use_tts": true
+}

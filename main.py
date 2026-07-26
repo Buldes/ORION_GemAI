@@ -62,8 +62,9 @@ class ORION_GemAI:
         self.run_playback_worker_thread = True
 
         # settings
+        self.settings_file: str = rf"{self.working_dir}/assets/settings.json"
         self.use_tts = True
-        self.use_stt = Falseg
+        self.use_stt = False
         self.activation_sound = True
         self.send_history = False
 
@@ -122,6 +123,7 @@ class ORION_GemAI:
 
     def initialise_all(self):
         self.output("Initialise ORION...", "log")
+        self.load_settings()
         self.init_character()
         self.init_ai_role()
         self.init_gemini()
@@ -171,6 +173,23 @@ class ORION_GemAI:
 
         with open(self.characteristics_json_files, "r", encoding="utf-8") as f:
             self.characteristics_dict = json.load(f)
+
+    def load_settings(self):
+        self.output("Loading settings...", "log")
+        with open(self.settings_file, "r") as f:
+            all_settings: dict = json.load(f)
+
+            self.gemini_version: str = all_settings["gemini_version"]
+
+            self.send_history: bool = all_settings["send_history"]
+            self.auto_python_execution: bool = all_settings["auto_python_execution"]
+
+            self.use_stt: bool = all_settings["use_stt"]
+            self.stt_settings: dict = all_settings["stt_settings"]
+            self.activation_sound: bool = all_settings["activation_sound"]
+            self.active_signal: list = all_settings["active_words"]
+
+            self.use_tts: list = all_settings["use_tts"]
 
     """TTS"""
 
@@ -510,7 +529,7 @@ class ORION_GemAI:
                 self.end_of_conversation = self.response["end_of_conversation"]
                 self.save_chat_history(self.response["summary"])
 
-            except Exceptiona as e:
+            except Exception as e:
                 self.output(f"An error occur: {e}", "error")
 
             if self.use_tts:
