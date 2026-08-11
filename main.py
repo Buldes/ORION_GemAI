@@ -2,7 +2,6 @@ import json
 import random
 import time
 from threading import Thread
-
 import google.genai.errors
 from google import genai
 from google.genai import types
@@ -10,16 +9,17 @@ from pydantic import BaseModel
 import os
 from datetime import datetime
 from rich import print
-from piper import PiperVoice, SynthesisConfig
-import wave
 import re
 import sounddevice as sd
 import numpy as np
 from openwakeword.model import Model
+import openwakeword
 from faster_whisper import WhisperModel
 import soundfile as sf
-import io
 import queue
+from tavily import TavilyClient
+from supertonic import TTS
+import tempfile
 
 class AgentOutput(BaseModel):
     further_process: str
@@ -28,6 +28,7 @@ class AgentOutput(BaseModel):
     pythonCode: str
     end_of_conversation: bool
     summary: str
+    online_search: str
 
 class ORION_GemAI:
     def __init__(self):
@@ -36,6 +37,7 @@ class ORION_GemAI:
         # files and keys
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
         self.json_files: str = rf"{self.working_dir}/assets/json_files/"
+        self.tts_voice_files: str = rf"{self.working_dir}/assets/local_voice/"
         self.gemini_api_key: str = ""
 
         # gemini
@@ -71,6 +73,8 @@ class ORION_GemAI:
         # voice tts
         self.tts_voice = None
         self.syn_config = None
+        self.tts_voice_style = "M1"
+        self.tts_voice_device = "cpu"
 
         # voice stt
         self.oww_model = None
@@ -82,6 +86,7 @@ class ORION_GemAI:
         self.stt_audio_queue = queue.Queue()
         self.oww_timeout: list = [2, time.time()]
         self.whisper_model = None
+        self.whisper_model_size = "tiny"
         self.stt_settings = {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30}
 
         # console running
@@ -91,7 +96,13 @@ class ORION_GemAI:
 
         # chat
         self.end_of_conversation: bool = True
-        self.auto_python_execution: bool = True # USE WITH CAUTION!
+        self.auto_python_execution: bool = False # USE WITH CAUTION!
+
+        # searching
+        self.allow_tavily_search: bool = True
+        self.tavily_api_key: str = ""
+        self.tavily = None
+        self.tavily_settings: dict = {}
 
     """LOGGING"""
 
@@ -123,6 +134,7 @@ class ORION_GemAI:
 
     def initialise_all(self):
         self.output("Initialise ORION...", "log")
+        self.load_api_keys()
         self.load_settings()
         self.init_character()
         self.init_ai_role()
@@ -133,12 +145,13 @@ class ORION_GemAI:
             self.init_tts()
         if self.use_stt:
             self.init_stt()
+        if self.allow_tavily_search:
+            self.init_tavily_search()
 
         self.output("Successfully initialised ORION", "log")
 
     def init_gemini(self):
-        with open(self.api_key_file, "r") as f:
-            self.gemini_api_key = json.load(f)["gemini"]
+        self.output(f"Init gemini with version {self.gemini_version} ...", "log")
 
         self.gemini_client = genai.Client(api_key=self.gemini_api_key)
         self.gemini_chat = self.gemini_client.chats.create(model=self.gemini_version)
@@ -151,17 +164,20 @@ class ORION_GemAI:
         - "content" (str): Deine direkte Antwort an den Nutzer. Falls du im Hintergrund Aufgaben ausführst (z. B. Python-Code), schreibe hier lediglich "Einen Augenblick...".
         - "further_process" (str): Für interne Denkprozesse. MUSS zwingend Text enthalten, wenn du "pythonCode" nutzt. Falls nicht benötigt, gib einen leeren String "" zurück.
         - "pythonCode" (str): Valider Python-Code für Windows 11 (zur Informationsbeschaffung oder Steuerung). Ausführung erfolgt über exec(), nutze also Zeilenumbrüche statt Semikolons. Falls kein Code nötig ist, gib "" zurück. Für Rückgaben MUSST du die funktion print() verwenden. Fehlende Module MÜSSEN mit pip installiert werden.
+          * STRIKTE REGEL: Rückgaben erhältst du AUSSCHLIESSLICH über die print() funktion. Lokale Variable werden NICHT zurückgegeben, NUR print()-Ausgaben.
         - "memory" (str): Dein Langzeitgedächtnis. 
           * STRIKTE REGEL: Speichere hier KEINE Gesprächszusammenfassungen oder Nichtigkeiten!
           * FORMAT: Nutze ausschließlich extrem kurze, kommagetrennte Stichpunkte. (Beispiel: "User programmiert in Python, Wohnort ist Dinslaken, Termin am 15.08.").
           * WICHTIG: Wenn der Nutzer in diesem Prompt KEINE neuen, dauerhaft relevanten Fakten genannt hat, gib hier ZWINGEND einen leeren String "" zurück!
         - "end_of_conversation" (bool): Du musst ZWINGEND entscheiden, ob die Konversation erstmal beendet (True) ist oder noch weiter läuft (FALSE). False bedeutet, dass du auf eine Antwort des Nutzers wartest.
         - "summary" (str): Eine sehr kurze Zusammenfassung was du und der Nutzer gesagt haben. Du MUSST es kurz halten.
-
+        - "online_search" (str): Suchanfrage für eine Online-Suche. Falls keine Online-Suche nötig ist, gib "" zurück.
+       
         PERSÖNLICHKEIT:
         Du besitzt folgende Charakterwerte (0.0 = 0% bis 1.0 = 100%): 
         {self.characteristics_dict}
         Du bist berechtigt, diese Werte über Python-Code in der Datei 'assets/json_files/character.json' (encoding="utf-8", indent=4) anzupassen, falls du deine Persönlichkeit verändern möchtest.
+        Du MUSST in Deutsch antworten.
         """
 
     def init_character(self):
@@ -188,25 +204,35 @@ class ORION_GemAI:
             self.stt_settings: dict = all_settings["stt_settings"]
             self.activation_sound: bool = all_settings["activation_sound"]
             self.active_signal: list = all_settings["active_words"]
+            self.whisper_model_size = all_settings["whisper_model"]
 
             self.use_tts: list = all_settings["use_tts"]
+            self.tts_voice_style: str = all_settings["tts_voice"]
+            self.tts_voice_device: str = all_settings["tts_device"]
+
+            self.allow_tavily_search: bool = all_settings["allow_tavily_search"]
+            self.tavily_settings: dict = all_settings["tavily_settings"]
+
+    def load_api_keys(self):
+        self.output("Loading api key...", "log")
+        with open(self.api_key_file, "r") as f:
+            all_keys = json.load(f)
+            self.gemini_api_key = all_keys["gemini"]
+            self.tavily_api_key = all_keys["tavily"]
+
+    def init_tavily_search(self):
+        self.output("Loading tavily...", "log")
+        self.tavily = TavilyClient(api_key=self.tavily_api_key)
 
     """TTS"""
 
     def init_tts(self):
         self.output("Loading Voice...", "log")
-
-        self.tts_voice = PiperVoice.load(rf"{self.working_dir}/assets/local_voice/de_DE-thorsten-high.onnx")
-
-        self.syn_config = SynthesisConfig(
-            volume=1.1,
-            length_scale=0.9,
-            noise_scale=0.333,
-            noise_w_scale=0.4,
-            normalize_audio=False,
-        )
+        self.tts_voice = TTS(auto_download=True, model_dir=self.tts_voice_files + "/")
+        self.syn_config = self.tts_voice.get_voice_style(voice_name=self.tts_voice_style)
 
     def tts_say_text(self, text, wait_till_finish: bool = False):
+        self.output("Generating Voice...", "log")
         sentences = re.split(r'(?<=[.!?])\s+', text)
         audio_queue = queue.Queue()
 
@@ -217,6 +243,7 @@ class ORION_GemAI:
                     break
                 data, fs, t = item
 
+                self.output("Playing Voice...", "log")
                 sd.play(data, fs)
                 sd.wait()
                 audio_queue.task_done()
@@ -230,19 +257,25 @@ class ORION_GemAI:
         self.playback_worker_thread = Thread(target=playback_worker, daemon=True)
         self.playback_worker_thread.start()
 
-        for sentence in sentences:
 
-            if not sentence.strip():
-                continue
+        wav, sr = self.tts_voice.synthesize(
+            text=text,
+            lang="de",
+            voice_style=self.syn_config,
+            total_steps=16,
+            speed=1.1
+        )
 
-            wave_io = io.BytesIO()
-            with wave.open(wave_io, "wb") as wave_file:
-                self.tts_voice.synthesize_wav(sentence, wave_file, syn_config=self.syn_config)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = temp_file.name
 
-            wave_io.seek(0)
-
-            data, fs = sf.read(wave_io, dtype='float32')
-            audio_queue.put((data, fs, sentence))
+        try:
+            self.tts_voice.save_audio(wav, temp_path)
+            data, fs = sf.read(temp_path, dtype='float32')
+            audio_queue.put((data, fs, text))
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
         if wait_till_finish:
             audio_queue.join()
@@ -257,9 +290,10 @@ class ORION_GemAI:
     """STT"""
 
     def init_stt(self):
-        self.output("Init STT...", "log")
+        self.output(f"Init STT with model size {self.whisper_model_size}...", "log")
+        openwakeword.utils.download_models()
         self.oww_model = Model(wakeword_models=[self.activation_word_file], inference_framework="onnx")
-        self.whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        self.whisper_model = WhisperModel(self.whisper_model_size, device="cpu", compute_type="int8")
 
         self.listen_and_transcript_thread_value = Thread(target=self.listen_and_transcript_thread)
         self.listen_and_transcript_thread_value.start()
@@ -444,6 +478,14 @@ class ORION_GemAI:
                            Zeit: {self.get_current_timestamp()} 
                            Transcriptions des Nutzers: {prompt}
                            """
+        elif prompt_type == "search_result":
+            full_prompt = f"""
+                        Folgende Nachricht enthält Ergebnisse aus einer Suchanfrage
+                        Erinnerungen: {self.permanent_memory} 
+                        Zeit: {self.get_current_timestamp()} 
+                        Suchanfrage: {prompt[0]}
+                        Ergebnisse: {prompt[1]}
+                        """
         else:
             full_prompt = f"""
                     Prompt-Typ: {prompt_type}
@@ -456,13 +498,15 @@ class ORION_GemAI:
         if self.send_history:
             full_prompt += f"\nChat History: {self.chat_history}"
 
+
         try:
             response = self.gemini_chat.send_message(
                 full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=AgentOutput,
-                    system_instruction=self.ai_instructions
+                    system_instruction=self.ai_instructions,
+                    # tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             )
 
@@ -470,13 +514,13 @@ class ORION_GemAI:
 
             return data
         except google.genai.errors.ClientError as e:
+
             if e.status == "RESOURCE_EXHAUSTED":
                 self.output("RESOURCE_EXHAUSTED on Gemini API", "warn")
                 return {"further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht weiter mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "" }
             else:
                 self.output(f"Something went wrong  on Gemini API: {e}", "error")
                 return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
-
 
     """LOCAL STORAGE"""
 
@@ -511,6 +555,24 @@ class ORION_GemAI:
         with open(self.chat_history_file, "r") as f:
             self.chat_history = json.load(f)
 
+    """Online Search"""
+
+    def tavily_search(self, search_item):
+        self.output(f"Searchin for: {search_item}", "log")
+        if not self.allow_tavily_search:
+            return "Not allowed"
+
+        response = self.tavily.search(
+            query=search_item,
+            max_results=self.tavily_settings["max_results"],
+            search_depth=self.tavily_settings["search_depth"],
+            exclude_domains=self.tavily_settings["exclude_domains"],
+            topic=self.tavily_settings["topic"],
+            time_range=self.tavily_settings["time_range"],
+            auto_parameters=self.tavily_settings["auto_parameters"]
+        )
+
+        return response
 
     """RUN"""
 
@@ -521,6 +583,9 @@ class ORION_GemAI:
             self.processed_response = ""
             self.init_console = False
             self.end_of_conversation: bool = True
+
+        def check_if_empty(item: str):
+            return item.upper() in ["", "NONE", "NULL"]
 
         while True:
 
@@ -535,11 +600,10 @@ class ORION_GemAI:
             if self.use_tts:
                 self.tts_say_text(self.response['content'])
 
-            if self.response["memory"].upper() not in ["", "NONE", "NULL"]:
+            if self.response["memory"] not in ["", "NONE", "NULL"]:
                 self.save_new_memory(self.response["memory"])
 
-            if (self.response["pythonCode"].upper() in ["", "NONE", "NULL"] and
-                    self.response["further_process"].upper() in ["", "NONE", "NULL"]):
+            if (check_if_empty(self.response["pythonCode"]) and check_if_empty(self.response["further_process"]) and check_if_empty(self.response["online_search"])):
 
                 # Fallback when using stt. Input() is not needed.
                 if self.use_stt:
@@ -563,8 +627,7 @@ class ORION_GemAI:
                 self.response = self.send_message(user_input)
                 continue
 
-
-            elif self.response["pythonCode"].upper() not in ["", "NONE", "NULL"]:
+            elif not check_if_empty(self.response["pythonCode"]):
                 self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
 
                 if self.auto_python_execution:
@@ -598,10 +661,16 @@ class ORION_GemAI:
 
                     continue
 
+            elif not check_if_empty(self.response["online_search"]):
+                res = self.tavily_search(self.response["online_search"])
+                self.response = self.send_message([self.response["online_search"], res], prompt_type="search_result")
+                continue
 
-            elif self.response["further_process"].upper() not in ["", "NONE", "NULL"]:
+            elif not check_if_empty(self.response["further_process"]):
                 self.response = self.send_message(self.response["further_process"], prompt_type="further_process")
                 continue
+
+
 
     def auto_run(self, type="console"):
         self.initialise_all()

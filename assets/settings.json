@@ -1,13 +1,19 @@
 {
   "gemini_version": "gemini-3.5-flash-lite",
 
-  "send_history": true,
-  "auto_python_execution": true,
+  "send_history": false,
+  "auto_python_execution": false,
 
-  "use_stt": false,
-  "stt_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30},
+  "use_stt": true,
+  "stt_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50},
+  "whisper_model": "turbo",
   "activation_sound": true,
   "active_words": ["Ja? ", "Joo", "Ich Höre ", "Yup"],
 
-  "use_tts": true
+  "use_tts": true,
+  "tts_voice": "M1",
+  "tts_device": "cpu",
+
+  "allow_tavily_search": true,
+  "tavily_settings": {"search_depth":"advanced", "max_results":"3", "exclude_domains": ["bild.de"], "topic":"general", "time_range":"month", "auto_parameters":true}
 }
