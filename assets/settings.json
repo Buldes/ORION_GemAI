@@ -4,16 +4,24 @@
   "send_history": false,
   "auto_python_execution": false,
 
-  "use_stt": true,
-  "stt_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50},
-  "whisper_model": "turbo",
+  "use_stt": false,
+  "oww_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50},
   "activation_sound": true,
-  "active_words": ["Ja? ", "Joo", "Ich Höre ", "Yup"],
+  "active_words": ["Ja? ", "Joo", "Ich Hoere ", "Yup"],
 
-  "use_tts": true,
+  "whisper_model": "turbo",
+  "whisper_device": "cpu",
+
+  "use_tts": false,
   "tts_voice": "M1",
   "tts_device": "cpu",
+  "tts_settings": {"speed": 1.2, "total_steps": 16},
 
   "allow_tavily_search": true,
-  "tavily_settings": {"search_depth":"advanced", "max_results":"3", "exclude_domains": ["bild.de"], "topic":"general", "time_range":"month", "auto_parameters":true}
+  "tavily_settings": {"search_depth":"advanced", "max_results":"3", "exclude_domains": ["bild.de"], "topic":"general", "time_range":"month", "auto_parameters":true},
+
+  "allow_cmd_execution": true,
+  "auto_cmd_execution": false,
+  "cmd_blacklist": ["format ", "rmdir /s /q c:", "del /f /s /q c:\\windows"],
+  "cmd_timeout": 20
 }

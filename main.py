@@ -20,6 +20,7 @@ import queue
 from tavily import TavilyClient
 from supertonic import TTS
 import tempfile
+import subprocess
 
 class AgentOutput(BaseModel):
     further_process: str
@@ -29,6 +30,7 @@ class AgentOutput(BaseModel):
     end_of_conversation: bool
     summary: str
     online_search: str
+    cmd_execution: str
 
 class ORION_GemAI:
     def __init__(self):
@@ -75,6 +77,7 @@ class ORION_GemAI:
         self.syn_config = None
         self.tts_voice_style = "M1"
         self.tts_voice_device = "cpu"
+        self.tts_settings: dict = {}
 
         # voice stt
         self.oww_model = None
@@ -87,7 +90,8 @@ class ORION_GemAI:
         self.oww_timeout: list = [2, time.time()]
         self.whisper_model = None
         self.whisper_model_size = "tiny"
-        self.stt_settings = {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30}
+        self.whisper_model_device: str = "cpu"
+        self.oww_settings = {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30}
 
         # console running
         self.init_console = True
@@ -103,6 +107,12 @@ class ORION_GemAI:
         self.tavily_api_key: str = ""
         self.tavily = None
         self.tavily_settings: dict = {}
+
+        # cmd
+        self.allow_cmd_execution: bool = False
+        self.cmd_auto_execution: bool = False
+        self.cmd_blacklist: list = []
+        self.cmd_timeout: int = 10
 
     """LOGGING"""
 
@@ -130,7 +140,7 @@ class ORION_GemAI:
     def console_print(self, text: str, color: str):
         print(f"[{color}]{text}[/{color}]")
 
-    "INIT"
+    """INIT"""
 
     def initialise_all(self):
         self.output("Initialise ORION...", "log")
@@ -172,6 +182,14 @@ class ORION_GemAI:
         - "end_of_conversation" (bool): Du musst ZWINGEND entscheiden, ob die Konversation erstmal beendet (True) ist oder noch weiter läuft (FALSE). False bedeutet, dass du auf eine Antwort des Nutzers wartest.
         - "summary" (str): Eine sehr kurze Zusammenfassung was du und der Nutzer gesagt haben. Du MUSST es kurz halten.
         - "online_search" (str): Suchanfrage für eine Online-Suche. Falls keine Online-Suche nötig ist, gib "" zurück.
+        - "command_execution" (str): Du hast Zugriff auf die direkte Ausführung von Systembefehlen auf dem lokalen Windows 11 PC des Nutzers via CMD und PowerShell. Nutze diese Fähigkeit, um Aktionen auf dem PC eigenständig durchzuführen (z. B. Programme öffnen/schließen, Medien und Lautstärke steuern, Prozesse verwalten, Dateien suchen, Git/Pip-Repositorys bedienen oder Netzwerkeinstellungen prüfen).
+            Wichtige Regeln für die Generierung von Befehlen:
+            * Rein nicht-interaktiv: Generiere NIEMALS Befehle, die auf Benutzereingaben (z. B. y/n, Bestätigungen oder Enter-Druck) warten. Nutze immer automatische Schalter (z. B. '/y' bei CMD oder '-Force' / '-Confirm:$false' bei PowerShell).
+            * Befehlsketten via '&&': Jede Ausführung öffnet eine neue, isolierte Shell. Befehle, die voneinander abhängen (wie das Wechseln des Ordners und anschließendes Installieren), MÜSSEN in einem einzigen String mit '&&' verknüpft werden (z. B. `cd /d "C:\Pfad" && pip install -e .`).
+            * PowerShell bevorzugen: Nutze für komplexe System- und Prozessabfragen bevorzugt PowerShell-Syntax (`powershell -Command "..."`), da diese unter Windows 11 mächtiger und strukturierter ist als die klassische CMD.
+            * Kompakte Ausgaben: Filtere Konsolenausgaben, damit das Kontextfenster nicht überläuft (z. B. `Select-Object -First 5` oder `dir /b`).
+            * Sicherheit: Führe niemals destruktive oder irreversible Befehle aus (wie das Formatieren von Datenträgern oder Löschen von Systemordnern).
+
        
         PERSÖNLICHKEIT:
         Du besitzt folgende Charakterwerte (0.0 = 0% bis 1.0 = 100%): 
@@ -201,17 +219,24 @@ class ORION_GemAI:
             self.auto_python_execution: bool = all_settings["auto_python_execution"]
 
             self.use_stt: bool = all_settings["use_stt"]
-            self.stt_settings: dict = all_settings["stt_settings"]
+            self.oww_settings: dict = all_settings["oww_settings"]
             self.activation_sound: bool = all_settings["activation_sound"]
             self.active_signal: list = all_settings["active_words"]
             self.whisper_model_size = all_settings["whisper_model"]
+            self.whisper_model_device: str = all_settings["whisper_device"]
 
             self.use_tts: list = all_settings["use_tts"]
             self.tts_voice_style: str = all_settings["tts_voice"]
             self.tts_voice_device: str = all_settings["tts_device"]
+            self.tts_settings = all_settings["tts_settings"]
 
             self.allow_tavily_search: bool = all_settings["allow_tavily_search"]
             self.tavily_settings: dict = all_settings["tavily_settings"]
+
+            self.allow_cmd_execution: bool = all_settings["allow_cmd_execution"]
+            self.cmd_auto_execution: bool = all_settings["auto_cmd_execution"]
+            self.cmd_blacklist: list = all_settings["cmd_blacklist"]
+            self.cmd_timeout: int = all_settings["cmd_timeout"]
 
     def load_api_keys(self):
         self.output("Loading api key...", "log")
@@ -260,10 +285,10 @@ class ORION_GemAI:
 
         wav, sr = self.tts_voice.synthesize(
             text=text,
-            lang="de",
+            lang="na",
             voice_style=self.syn_config,
-            total_steps=16,
-            speed=1.1
+            total_steps=self.tts_settings["total_steps"],
+            speed=self.tts_settings["speed"]
         )
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
@@ -293,7 +318,7 @@ class ORION_GemAI:
         self.output(f"Init STT with model size {self.whisper_model_size}...", "log")
         openwakeword.utils.download_models()
         self.oww_model = Model(wakeword_models=[self.activation_word_file], inference_framework="onnx")
-        self.whisper_model = WhisperModel(self.whisper_model_size, device="cpu", compute_type="int8")
+        self.whisper_model = WhisperModel(self.whisper_model_size, device=self.whisper_model_device, compute_type="int8")
 
         self.listen_and_transcript_thread_value = Thread(target=self.listen_and_transcript_thread)
         self.listen_and_transcript_thread_value.start()
@@ -345,7 +370,7 @@ class ORION_GemAI:
                         continue
 
                     rms = np.sqrt(np.mean(chunk.astype(np.float32) ** 2))
-                    self.word_detected = rms > (self.stt_settings["threshold"] * 4)
+                    self.word_detected = rms > (self.oww_settings["threshold"] * 4)
                     if self.word_detected:
                         self.output("Adaptive Input detected", "log")
 
@@ -389,7 +414,7 @@ class ORION_GemAI:
             silence_chunks_count = 0
 
             chunk_duration = 1280 / 16_000 # ca. 0.08 sec @ 16khz
-            max_silence_chunks = int(self.stt_settings["SilenceTimeout"] / chunk_duration)
+            max_silence_chunks = int(self.oww_settings["SilenceTimeout"] / chunk_duration)
 
             with self.stt_audio_queue.mutex:
                 self.stt_audio_queue.queue.clear()
@@ -397,7 +422,7 @@ class ORION_GemAI:
             start_time = time.time()
 
             while True:
-                if not speech_started and (time.time() - start_time > self.stt_settings["InitialSilenceTimeout"]):
+                if not speech_started and (time.time() - start_time > self.oww_settings["InitialSilenceTimeout"]):
                     self.output("Timeout: No speech detected", "log")
                     return False
 
@@ -410,7 +435,7 @@ class ORION_GemAI:
                 rms = np.sqrt(np.mean(chunk.astype(np.float32)**2))
 
                 # check if loud enough
-                is_speech = rms > self.stt_settings["threshold"]
+                is_speech = rms > self.oww_settings["threshold"]
 
                 if not speech_started:
                     if is_speech:
@@ -486,6 +511,13 @@ class ORION_GemAI:
                         Suchanfrage: {prompt[0]}
                         Ergebnisse: {prompt[1]}
                         """
+        elif prompt_type == "cmd":
+            full_prompt = f"""
+                        Rückgabewert aus der CMD Execution
+                        Erinnerungen: {self.permanent_memory} 
+                        Zeit: {self.get_current_timestamp()} 
+                        Ausgabe: {prompt}
+                        """
         else:
             full_prompt = f"""
                     Prompt-Typ: {prompt_type}
@@ -555,7 +587,7 @@ class ORION_GemAI:
         with open(self.chat_history_file, "r") as f:
             self.chat_history = json.load(f)
 
-    """Online Search"""
+    """ONLINE SEARCH"""
 
     def tavily_search(self, search_item):
         self.output(f"Searchin for: {search_item}", "log")
@@ -573,6 +605,45 @@ class ORION_GemAI:
         )
 
         return response
+
+    """CMD EXECUTION"""
+
+    def run_cmd_commands(self, command):
+        if not self.allow_cmd_execution:
+            return "FEHLER: CMD Execution ist abgeschaltet"
+
+        if not self.cmd_auto_execution:
+            self.console_print(f"Möchtest du folgenden Befehl ausführen?\n {command}", "yellow")
+            if input("(Y/N) ").upper() == "N":
+                return "FEHLER: Der Befehl wurde vom Nutzer abgelehnt"
+
+        self.output(f"Running CMD Command: {command}", "log")
+
+        if any(bad in command.lower() for bad in self.cmd_blacklist):
+            self.output(f"Blacklist detected: {command}", "warn")
+            return "FEHLER: Befehl aus Sicherheitsgründen abgelehnt."
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=self.cmd_timeout,
+                encoding="cp850"
+            )
+
+            output = result.stdout.strip()
+            errors = result.stderr.strip()
+
+            if result.returncode == 0:
+                return output if output else "Befehl erfolgreich ausgeführt."
+            else:
+                return f"Fehler (Code {result.returncode}): {errors if errors else output}"
+        except subprocess.TimeoutExpired:
+            return f"FEHLER: Befehl hat nach {timeout} Sekunden gedauert und wurde abgebrochen (evtl. wartet er auf Tastatureingabe)."
+        except Exception as e:
+            return f"FEHLER beim Ausführen: {str(e)}"
 
     """RUN"""
 
@@ -627,6 +698,11 @@ class ORION_GemAI:
                 self.response = self.send_message(user_input)
                 continue
 
+            elif not check_if_empty(self.response["cmd_execution"]):
+                result = self.run_cmd_commands(self.response["cmd_execution"])
+                self.response = self.send_message(result, prompt_type="cmd")
+                continue
+
             elif not check_if_empty(self.response["pythonCode"]):
                 self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
 
@@ -669,8 +745,6 @@ class ORION_GemAI:
             elif not check_if_empty(self.response["further_process"]):
                 self.response = self.send_message(self.response["further_process"], prompt_type="further_process")
                 continue
-
-
 
     def auto_run(self, type="console"):
         self.initialise_all()
