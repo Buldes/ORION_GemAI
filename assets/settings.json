@@ -12,7 +12,7 @@
   "whisper_model": "turbo",
   "whisper_device": "cpu",
 
-  "use_tts": false,
+  "use_tts": true,
   "tts_voice": "M1",
   "tts_device": "cpu",
   "tts_settings": {"speed": 1.2, "total_steps": 16},

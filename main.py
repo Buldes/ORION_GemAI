@@ -214,7 +214,6 @@ class ORION_GemAI:
             all_settings: dict = json.load(f)
 
             self.gemini_version: str = all_settings["gemini_version"]
-
             self.send_history: bool = all_settings["send_history"]
             self.auto_python_execution: bool = all_settings["auto_python_execution"]
 
