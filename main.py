@@ -1,4 +1,46 @@
 import json
+import os
+import sys
+
+with open(r"./assets/settings.json", "r", encoding="utf-8") as file:
+    settings = json.load(file)
+
+if settings.get("tts_device") == "gpu":
+    print("Setting everything up for GPU...")
+
+    # adding cuda PATH
+    cuda_path = settings.get("cuda_dir")
+    if os.path.exists(cuda_path):
+        os.add_dll_directory(cuda_path)
+        os.environ["PATH"] = cuda_path + os.pathsep + os.environ["PATH"]
+
+    # Adding enviroment PATH (/venv/)
+    venv_site_packages = os.path.abspath(r".\venv\Lib\site-packages")
+    nvidia_dir = os.path.join(venv_site_packages, "nvidia")
+
+    if os.path.exists(nvidia_dir):
+        for root, dirs, files in os.walk(nvidia_dir):
+            if "bin" in dirs:
+                bin_path = os.path.join(root, "bin")
+                os.add_dll_directory(bin_path)
+                os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+
+import onnxruntime as ort
+
+if settings.get("tts_device") == "gpu":
+
+    # force remove GPU-Instance
+    _original_init = ort.InferenceSession.__init__
+
+    def _gpu_forced_init(self, *args, **kwargs):
+        sess_options = kwargs.get("sess_options", ort.SessionOptions())
+        sess_options.log_severity_level = 3
+
+        kwargs["providers"] = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        _original_init(self, *args, **kwargs)
+
+    ort.InferenceSession.__init__ = _gpu_forced_init
+
 import random
 import time
 from threading import Thread
@@ -32,6 +74,8 @@ class AgentOutput(BaseModel):
     online_search: str
     cmd_execution: str
 
+
+# noinspection PyTypeChecker,PyMethodMayBeStatic
 class ORION_GemAI:
     def __init__(self):
         self.working_dir: str = os.path.abspath("./")
@@ -640,7 +684,7 @@ class ORION_GemAI:
             else:
                 return f"Fehler (Code {result.returncode}): {errors if errors else output}"
         except subprocess.TimeoutExpired:
-            return f"FEHLER: Befehl hat nach {timeout} Sekunden gedauert und wurde abgebrochen (evtl. wartet er auf Tastatureingabe)."
+            return f"FEHLER: Befehl hat nach {self.cmd_timeout} Sekunden gedauert und wurde abgebrochen (evtl. wartet er auf Tastatureingabe)."
         except Exception as e:
             return f"FEHLER beim Ausführen: {str(e)}"
 

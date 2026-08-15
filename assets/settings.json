@@ -23,5 +23,7 @@
   "allow_cmd_execution": true,
   "auto_cmd_execution": false,
   "cmd_blacklist": ["format ", "rmdir /s /q c:", "del /f /s /q c:\\windows"],
-  "cmd_timeout": 20
+  "cmd_timeout": 20,
+
+  "cuda_dir": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin"
 }
