@@ -5,7 +5,7 @@ import sys
 with open(r"./assets/settings.json", "r", encoding="utf-8") as file:
     settings = json.load(file)
 
-if settings.get("tts_device") == "gpu":
+if settings.get("tts_and_stt_device") == "gpu":
     print("Setting everything up for GPU...")
 
     # adding cuda PATH
@@ -27,7 +27,7 @@ if settings.get("tts_device") == "gpu":
 
 import onnxruntime as ort
 
-if settings.get("tts_device") == "gpu":
+if settings.get("tts_and_stt_device") == "gpu":
 
     # force remove GPU-Instance
     _original_init = ort.InferenceSession.__init__
@@ -120,8 +120,8 @@ class ORION_GemAI:
         self.tts_voice = None
         self.syn_config = None
         self.tts_voice_style = "M1"
-        self.tts_voice_device = "cpu"
         self.tts_settings: dict = {}
+        self.tts_and_stt_device = "cpu"
 
         # voice stt
         self.oww_model = None
@@ -134,8 +134,8 @@ class ORION_GemAI:
         self.oww_timeout: list = [2, time.time()]
         self.whisper_model = None
         self.whisper_model_size = "tiny"
-        self.whisper_model_device: str = "cpu"
         self.oww_settings = {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30}
+        self.speaking_recognition_mode = "smart" # possible: smart, voice, manually
 
         # console running
         self.init_console = True
@@ -266,12 +266,13 @@ class ORION_GemAI:
             self.activation_sound: bool = all_settings["activation_sound"]
             self.active_signal: list = all_settings["active_words"]
             self.whisper_model_size = all_settings["whisper_model"]
-            self.whisper_model_device: str = all_settings["whisper_device"]
+            self.speaking_recognition_mode = all_settings["speaking_recognition_mode"]
 
             self.use_tts: list = all_settings["use_tts"]
             self.tts_voice_style: str = all_settings["tts_voice"]
-            self.tts_voice_device: str = all_settings["tts_device"]
             self.tts_settings = all_settings["tts_settings"]
+
+            self.tts_and_stt_device = all_settings["tts_and_stt_device"]
 
             self.allow_tavily_search: bool = all_settings["allow_tavily_search"]
             self.tavily_settings: dict = all_settings["tavily_settings"]
@@ -359,9 +360,12 @@ class ORION_GemAI:
 
     def init_stt(self):
         self.output(f"Init STT with model size {self.whisper_model_size}...", "log")
+        whisper_model_device = "cuda" if self.tts_and_stt_device == "gpu" else "cpu"
         openwakeword.utils.download_models()
         self.oww_model = Model(wakeword_models=[self.activation_word_file], inference_framework="onnx")
-        self.whisper_model = WhisperModel(self.whisper_model_size, device=self.whisper_model_device, compute_type="int8")
+        self.whisper_model = WhisperModel(self.whisper_model_size, device=whisper_model_device, compute_type="int8")
+
+        self.output(f"Speaking recognition mode: {self.speaking_recognition_mode}", "log")
 
         self.listen_and_transcript_thread_value = Thread(target=self.listen_and_transcript_thread)
         self.listen_and_transcript_thread_value.start()
@@ -372,8 +376,11 @@ class ORION_GemAI:
         with sd.InputStream(samplerate=16000, channels=1, blocksize=1280, dtype='int16', callback=self.audio_callback):
             while True:
 
+                if self.speaking_recognition_mode == "manually":
+                    time.sleep(0.1)
+                    continue
 
-                if self.word_detected:
+                elif self.word_detected:
                     # stop all sounds
                     sd.stop()
                     self.oww_timeout[1] = time.time()
@@ -428,7 +435,7 @@ class ORION_GemAI:
                             if time.time() - self.oww_timeout[1] <= self.oww_timeout[0]:
                                 continue
 
-                            if score > 0.5:
+                            if score > self.oww_settings["score_threshold"]:
                                 self.output("Activation Word detected", "log")
                                 self.word_detected = True
                     except queue.Empty:
@@ -705,8 +712,12 @@ class ORION_GemAI:
 
             self.console_print(f"\n{self.response['content']}\n", "italic cyan")
             try:
-                self.end_of_conversation = self.response["end_of_conversation"]
                 self.save_chat_history(self.response["summary"])
+                # speaking_recognition_mode
+                if self.speaking_recognition_mode == "smart":
+                    self.end_of_conversation = self.response["end_of_conversation"]
+                else:
+                    self.end_of_conversation = True
 
             except Exception as e:
                 self.output(f"An error occur: {e}", "error")
@@ -717,14 +728,31 @@ class ORION_GemAI:
             if self.response["memory"] not in ["", "NONE", "NULL"]:
                 self.save_new_memory(self.response["memory"])
 
-            if (check_if_empty(self.response["pythonCode"]) and check_if_empty(self.response["further_process"]) and check_if_empty(self.response["online_search"])):
+            if check_if_empty(self.response["pythonCode"]) and check_if_empty(self.response["further_process"]) and check_if_empty(self.response["online_search"]):
 
                 # Fallback when using stt. Input() is not needed.
                 if self.use_stt:
-                    if self.end_of_conversation:
-                        self.console_print(f"Inaktiv", "green")
+                    if self.speaking_recognition_mode == "manually":
+                        self.console_print(f"Press -enter- to activate voice input", "green")
+                        input()
+                        self.console_print(f"Listening...", "green")
+
+                        sd.stop()
+
+                        while True:
+                            audio_data = self.record_audio(-1)
+                            if audio_data is not False:
+                                break
+
+                        self.messages_transcript[1] = self.transcript_audio(audio_data)
+
+                        self.response = self.send_message(self.messages_transcript[1], "transcript")
+                        continue
+
+                    elif self.end_of_conversation:
+                        self.console_print(f"Inactive", "green")
                     else:
-                        self.console_print(f"Höhere zu...", "green")
+                        self.console_print(f"Adaptive listening...", "green")
 
                     while not self.messages_transcript[0]:
                         time.sleep(0.1)
