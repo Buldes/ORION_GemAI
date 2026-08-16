@@ -229,6 +229,17 @@ class ORION_GemAI:
           * RÜCKGABEN: Gib alle Ergebnisse, Daten oder Statusmeldungen ZWINGEND mit print() aus, da ausschließlich Konsolenausgaben (stdout) an dich zurückgeführt werden.
           * DEPENDENCIES: Fehlen benötigte Module, installiere diese zu Beginn des Skripts automatisch (z. B. via os.system("pip install <package>") oder subprocess).
           * REGELN: Der Code muss vollständig autonom laufen. Nutze NIEMALS interaktive Befehle wie input(), da diese den Subprozess blockieren.
+          * GUI & SIMULATIONEN (NON-BLOCKING): Wenn du GUI-Fenster oder Simulationen erstellst (z. B. mit Pygame), darf das Hauptskript NICHT blockieren. Schreibe den Pygame-Code in eine 'simulation.py' und starte sie ZWINGEND nach folgendem exakten Muster im Hintergrund:
+            EXAKTES MUSTER:
+              import subprocess, sys
+              filename = 'simulation.py'
+              with open(filename, 'w', encoding='utf-8') as f:
+                  f.write(code)
+              subprocess.Popen([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+              print('Programm gestartet.')
+            
+              STRIKTES VERBOT: Rufe subprocess.Popen() NIEMALS ohne Argumente '()' auf! Es MUSS IMMER ([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL) enthalten.
+        * QUALITÄT & INTERAKTIVITÄT: Nutze für physikalische Simulationen bevorzugt `pygame`. Erstelle visuell ansprechende, flüssige und interaktive Simulationen. Der Nutzer MUSS Parameter live anpassen können (z. B. Tasten für Gravitation/Masse/Geschwindigkeit, Pausieren per Leertaste) und die aktuellen physikalischen Werte MÜSSEN als On-Screen-HUD/Text im Fenster angezeigt werden.
         - "memory" (str): Dein Langzeitgedächtnis. 
           * STRIKTE REGEL: Speichere hier KEINE Gesprächszusammenfassungen oder Nichtigkeiten!
           * FORMAT: Nutze ausschließlich extrem kurze, kommagetrennte Stichpunkte. (Beispiel: "User programmiert in Python, Wohnort ist Dinslaken, Termin am 15.08.").
@@ -343,6 +354,9 @@ class ORION_GemAI:
         self.playback_worker_thread = Thread(target=playback_worker, daemon=True)
         self.playback_worker_thread.start()
 
+        if not text.strip():
+            self.output("TTS: Text is empty.", "warning")
+            return
 
         wav, sr = self.tts_voice.synthesize(
             text=text,
@@ -619,7 +633,7 @@ class ORION_GemAI:
 
             if e.status == "RESOURCE_EXHAUSTED":
                 self.output("RESOURCE_EXHAUSTED on Gemini API", "warn")
-                return {"further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht weiter mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "" }
+                return {"further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
             else:
                 self.output(f"Something went wrong  on Gemini API: {e}", "error")
                 return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
@@ -734,6 +748,22 @@ class ORION_GemAI:
         python_response = []
 
         try:
+            print(script)
+            if "subprocess.Popen()" in script or "subprocess.Popen([sys.executable, filename])" in script:
+                if "subprocess.Popen()" in script:
+                    script = script.replace(
+                        "subprocess.Popen()",
+                        "subprocess.Popen([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)"
+                    )
+                else:
+                    script = script.replace(
+                        "subprocess.Popen([sys.executable, filename])",
+                        "subprocess.Popen([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)"
+                    )
+                self.output(f"Apply Auto-Fix: subprocess.Popen(\\[sys.executable, filename\\], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)", "warn")
+                print(script)
+
+
             with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py", encoding="utf-8") as tmp:
                 tmp.write(script)
                 temp_path = tmp.name
@@ -743,7 +773,8 @@ class ORION_GemAI:
                 capture_output=True,
                 text=True,
                 timeout=self.py_timeout,
-                encoding="utf-8"
+                encoding="utf-8",
+                creationflags=subprocess.CREATE_NEW_CONSOLE
             )
 
             if result.stdout:
@@ -859,11 +890,12 @@ class ORION_GemAI:
                     if not self.allow_python_execution:
                         self.send_multiple_mesages("Die Ausführung von Python Code wurde ausgeschaltet.", prompt_type="System")
 
-                    self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
 
                     if self.auto_python_execution:
+                        self.console_print(f"Starte programm...", "yellow")
                         execute_py = True
                     else:
+                        self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
                         execute_py = input("[Y/N]").upper() == "Y"
 
                     if execute_py:

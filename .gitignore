@@ -222,3 +222,4 @@ assets/json_files/memory.json
 assets/json_files/chat_history.json
 assets/json_files/character.json
 run_in_cmd_console.bat
+simulation.py
