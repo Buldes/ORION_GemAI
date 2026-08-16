@@ -2,7 +2,10 @@
   "gemini_version": "gemini-3.5-flash-lite",
 
   "send_history": false,
+
+  "allow_python_execution": true,
   "auto_python_execution": false,
+  "python_timeout": 60,
 
   "use_stt": false,
   "oww_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50, "score_threshold":  0.4},

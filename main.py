@@ -116,6 +116,7 @@ class ORION_GemAI:
         self.use_stt = False
         self.activation_sound = True
         self.send_history = False
+        self.end_of_conversation: bool = True
 
         # voice tts
         self.tts_voice = None
@@ -143,9 +144,10 @@ class ORION_GemAI:
         self.response = ""
         self.processed_response = ""
 
-        # chat
-        self.end_of_conversation: bool = True
+        # python
         self.auto_python_execution: bool = False # USE WITH CAUTION!
+        self.py_timeout = 60
+        self.allow_python_execution = True
 
         # searching
         self.allow_tavily_search: bool = True
@@ -158,6 +160,9 @@ class ORION_GemAI:
         self.cmd_auto_execution: bool = False
         self.cmd_blacklist: list = []
         self.cmd_timeout: int = 10
+
+        # multiple promps at once
+        self.total_promps = ""
 
     """LOGGING"""
 
@@ -220,8 +225,10 @@ class ORION_GemAI:
             * REGEL FÜR TTS: Antworte in reinem Fließtext OHNE Markdown-Formatierungen (keine **, ##, Bullet Points oder Codeblöcke), damit das Text-to-Speech-Modell den Text flüssig vorlesen kann. Nutzen Satzzeichen (?, !, ..., -) gezielt für natürliche Betonung und Pausen.
             * REGEL FÜR HINTERGRUND-TASKS: Falls du im Hintergrund Aufgaben ausführst (Python-Code, CMD-Befehle oder Online-Suche), schreibe in "content": "Einen Augenblick..." oder ähnliches KURZES.
         - "further_process" (str): Für interne Denkprozesse. MUSS zwingend Text enthalten, wenn du "pythonCode" nutzt. Falls nicht benötigt, gib einen leeren String "" zurück.
-        - "pythonCode" (str): Valider Python-Code für Windows 11 (zur Informationsbeschaffung oder Steuerung). Ausführung erfolgt über exec(), nutze also Zeilenumbrüche statt Semikolons. Falls kein Code nötig ist, gib "" zurück. Für Rückgaben MUSST du die funktion print() verwenden. Fehlende Module MÜSSEN mit pip installiert werden.
-          * STRIKTE REGEL: Rückgaben erhältst du AUSSCHLIESSLICH über die print() funktion. Lokale Variable werden NICHT zurückgegeben, NUR print()-Ausgaben.
+        - "pythonCode" (str): Valider Python-Code für Windows 11 (zur Informationsbeschaffung oder Steuerung). Das Skript wird isoliert als eigenständige .py-Datei im venv ausgeführt. Falls kein Code nötig ist, gib "" zurück.
+          * RÜCKGABEN: Gib alle Ergebnisse, Daten oder Statusmeldungen ZWINGEND mit print() aus, da ausschließlich Konsolenausgaben (stdout) an dich zurückgeführt werden.
+          * DEPENDENCIES: Fehlen benötigte Module, installiere diese zu Beginn des Skripts automatisch (z. B. via os.system("pip install <package>") oder subprocess).
+          * REGELN: Der Code muss vollständig autonom laufen. Nutze NIEMALS interaktive Befehle wie input(), da diese den Subprozess blockieren.
         - "memory" (str): Dein Langzeitgedächtnis. 
           * STRIKTE REGEL: Speichere hier KEINE Gesprächszusammenfassungen oder Nichtigkeiten!
           * FORMAT: Nutze ausschließlich extrem kurze, kommagetrennte Stichpunkte. (Beispiel: "User programmiert in Python, Wohnort ist Dinslaken, Termin am 15.08.").
@@ -264,7 +271,10 @@ class ORION_GemAI:
 
             self.gemini_version: str = all_settings["gemini_version"]
             self.send_history: bool = all_settings["send_history"]
+
             self.auto_python_execution: bool = all_settings["auto_python_execution"]
+            self.py_timeout = all_settings["python_timeout"]
+            self.allow_python_execution = all_settings["allow_python_execution"]
 
             self.use_stt: bool = all_settings["use_stt"]
             self.oww_settings: dict = all_settings["oww_settings"]
@@ -527,66 +537,69 @@ class ORION_GemAI:
 
     """PROMPT"""
 
-    def send_message(self, prompt, prompt_type: str = "user"):
-        self.output(f"Requesting AI on type: {prompt_type}", "log")
-
+    def get_prompt_by_type(self, prompt, prompt_type: str = "user", no_memorys = False, no_history=False):
         full_prompt: str = ""
         if prompt_type == "user":
             full_prompt = f"""
-                    Erinnerungen: {self.permanent_memory} 
-                    Zeit: {self.get_current_timestamp()} 
-                    Nachricht des Nutzers: {prompt}
-                    """
+                            Zeit: {self.get_current_timestamp()} 
+                            Nachricht des Nutzers: {prompt}
+                            """
         elif prompt_type == "pythonCode":
             full_prompt = f"""
-                    DIES IST KEINE NACHRICHT DES NUTZERS
-                    Der Python Code aus deiner Letzten Nachricht wurde Ausgeführt. Dies sind die Ergebnisse
-                    Erinnerungen: {self.permanent_memory} 
-                    Zeit: {self.get_current_timestamp()} 
-                    Ausgabe: {prompt}
-                    """
+                            DIES IST KEINE NACHRICHT DES NUTZERS
+                            Der Python Code aus deiner Letzten Nachricht wurde Ausgeführt. Dies sind die Ergebnisse
+                            Zeit: {self.get_current_timestamp()} 
+                            Ausgabe: {prompt}
+                            """
         elif prompt_type == "further_process":
             full_prompt = f"""
-                    DIES IST KEINE NACHRICHT DES NUTZERS
-                    Du hast further Proces in deiner Letzten Nachricht aktiviert
-                    Erinnerungen: {self.permanent_memory} 
-                    Zeit: {self.get_current_timestamp()} 
-                    further_process Wert: {prompt}
-                    """
+                            DIES IST KEINE NACHRICHT DES NUTZERS
+                            Du hast further Proces in deiner Letzten Nachricht aktiviert
+                            Zeit: {self.get_current_timestamp()} 
+                            further_process Wert: {prompt}
+                            """
         elif prompt_type == "transcript":
             full_prompt = f"""
-                           Die Folgende Nachricht wurde Transkribiert vom Audio des Nutzers
-                           Erinnerungen: {self.permanent_memory} 
-                           Zeit: {self.get_current_timestamp()} 
-                           Transcriptions des Nutzers: {prompt}
-                           """
+                                   Die Folgende Nachricht wurde Transkribiert vom Audio des Nutzers
+                                   Zeit: {self.get_current_timestamp()} 
+                                   Transcriptions des Nutzers: {prompt}
+                                   """
         elif prompt_type == "search_result":
             full_prompt = f"""
-                        Folgende Nachricht enthält Ergebnisse aus einer Suchanfrage
-                        Erinnerungen: {self.permanent_memory} 
-                        Zeit: {self.get_current_timestamp()} 
-                        Suchanfrage: {prompt[0]}
-                        Ergebnisse: {prompt[1]}
-                        """
+                                Folgende Nachricht enthält Ergebnisse aus einer Suchanfrage
+                                Zeit: {self.get_current_timestamp()} 
+                                Suchanfrage: {prompt[0]}
+                                Ergebnisse: {prompt[1]}
+                                """
         elif prompt_type == "cmd":
             full_prompt = f"""
-                        Rückgabewert aus der CMD Execution
-                        Erinnerungen: {self.permanent_memory} 
-                        Zeit: {self.get_current_timestamp()} 
-                        Ausgabe: {prompt}
-                        """
+                                Rückgabewert aus der CMD Execution
+                                Zeit: {self.get_current_timestamp()} 
+                                Ausgabe: {prompt}
+                                """
         else:
             full_prompt = f"""
-                    Prompt-Typ: {prompt_type}
-                    Erinnerungen: {self.permanent_memory} 
-                    Zeit: {self.get_current_timestamp()} 
-                    Prompt: {prompt}
-                    """
+                            Prompt-Typ: {prompt_type}
+                            Zeit: {self.get_current_timestamp()} 
+                            Prompt: {prompt}
+                            """
 
         # add history
-        if self.send_history:
+        if self.send_history and not no_history:
             full_prompt += f"\nChat History: {self.chat_history}"
 
+        if not no_memorys:
+            full_prompt += f"\nErinnerungen: {self.permanent_memory}"
+
+        return full_prompt
+
+    def send_message(self, prompt, prompt_type: str = "user", promp_is_full_prompt=False):
+        self.output(f"Requesting AI on type: {prompt_type}", "log")
+
+        if promp_is_full_prompt:
+            full_prompt = prompt
+        else:
+            full_prompt = self.get_prompt_by_type(prompt, prompt_type)
 
         try:
             response = self.gemini_chat.send_message(
@@ -610,6 +623,19 @@ class ORION_GemAI:
             else:
                 self.output(f"Something went wrong  on Gemini API: {e}", "error")
                 return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
+
+    def send_multiple_mesages(self, prompt, prompt_type: str = "user", is_final = False):
+        if not is_final:
+            f_p = self.get_prompt_by_type(prompt, prompt_type, no_memorys=True, no_history=True)
+            self.total_promps += f"\n{f_p}"
+            return None
+        else:
+            final_prompt = self.total_promps + f"\nErinnerungen: {self.permanent_memory}"
+            if self.send_history:
+                final_prompt += f"\nChat History: {self.chat_history}"
+            self.total_promps = ""
+
+            return self.send_message(final_prompt, "Multiple", promp_is_full_prompt=True)
 
     """LOCAL STORAGE"""
 
@@ -702,6 +728,47 @@ class ORION_GemAI:
         except Exception as e:
             return f"FEHLER beim Ausführen: {str(e)}"
 
+    """PYTHON EXECUTION"""
+
+    def run_python_script(self, script):
+        python_response = []
+
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py", encoding="utf-8") as tmp:
+                tmp.write(script)
+                temp_path = tmp.name
+
+            result = subprocess.run(
+                [sys.executable, temp_path],
+                capture_output=True,
+                text=True,
+                timeout=self.py_timeout,
+                encoding="utf-8"
+            )
+
+            if result.stdout:
+                python_response.append(result.stdout.strip())
+
+            if result.returncode != 0:
+                python_response.append(f"Fehler (Code {result.returncode}): {result.stderr.strip()}")
+                self.console_print(f"Ausgabe: {python_response}", color="red")
+            else:
+                self.console_print(f"Ausgabe: {python_response}", color="green")
+
+        except subprocess.TimeoutExpired:
+            python_response.append(f"FEHLER: Skript-Ausführung hat das Zeitlimit von {self.py_timeout} Sekunden überschritten.")
+            self.console_print(f"Ausgabe: {python_response}", color="red")
+
+        except Exception as e:
+            python_response.append(f"Es trat ein Fehler auf: {e}")
+            self.console_print(f"Ausgabe: {python_response}", color="red")
+
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        return python_response
+
     """RUN"""
 
     def run_in_console(self, no_while_loop: bool = False):
@@ -730,6 +797,7 @@ class ORION_GemAI:
                 self.output(f"An error occur: {e}", "error")
 
             if self.use_tts:
+                sd.stop()
                 self.tts_say_text(self.response['content'])
 
             if self.response["memory"] not in ["", "NONE", "NULL"]:
@@ -774,55 +842,42 @@ class ORION_GemAI:
                     return
 
                 self.response = self.send_message(user_input)
+
                 continue
 
-            elif not check_if_empty(self.response["cmd_execution"]):
-                result = self.run_cmd_commands(self.response["cmd_execution"])
-                self.response = self.send_message(result, prompt_type="cmd")
-                continue
+            else:
 
-            elif not check_if_empty(self.response["pythonCode"]):
-                self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
+                if not check_if_empty(self.response["cmd_execution"]):
+                    result = self.run_cmd_commands(self.response["cmd_execution"])
+                    self.send_multiple_mesages(result, prompt_type="cmd")
 
-                if self.auto_python_execution:
-                    execute_py = True
-                else:
-                    execute_py = input("[Y/N]").upper() == "Y"
+                if not check_if_empty(self.response["online_search"]):
+                    res = self.tavily_search(self.response["online_search"])
+                    self.send_multiple_mesages([self.response["online_search"], res], prompt_type="search_result")
 
-                if execute_py:
-                    python_response = []
-                    code = self.response["pythonCode"]
+                if not check_if_empty(self.response["pythonCode"]):
+                    if not self.allow_python_execution:
+                        self.send_multiple_mesages("Die Ausführung von Python Code wurde ausgeschaltet.", prompt_type="System")
 
-                    local_scope = {"python_response": python_response, "json": __import__("json")}
+                    self.console_print(f"Möchtest du folgenden Code ausführen?\n{self.response["pythonCode"]}", "yellow")
 
-                    try:
-                        local_scope["print"] = lambda *args: python_response.append(" ".join(map(str, args)))
-
-                        exec(code, {}, local_scope)
-                    except Exception as e:
-                        python_response.append(f"Es trat ein Fehler auf: {e}")
-                        self.console_print(f"Ausgabe: {python_response}", color="red")
+                    if self.auto_python_execution:
+                        execute_py = True
                     else:
-                        self.console_print(f"Ausgabe: {python_response}", color="green")
+                        execute_py = input("[Y/N]").upper() == "Y"
 
+                    if execute_py:
+                        python_response = self.run_python_script(self.response["pythonCode"])
+                        self.send_multiple_mesages(str(python_response), prompt_type="pythonCode")
 
+                    else:
+                        self.send_multiple_mesages("Der Nutzer hat die ausführung des Programmes verweigert.", prompt_type="System")
 
-                    self.response = self.send_message(str(python_response), prompt_type="pythonCode")
+                if not check_if_empty(self.response["further_process"]):
+                    pass
+                    # self.send_multiple_mesages(self.response["further_process"], prompt_type="further_process")
 
-                    continue
-                else:
-                    response = self.send_message("Der Nutzer hat die ausführung des Programmes verweigert.", prompt_type="System")
-
-                    continue
-
-            elif not check_if_empty(self.response["online_search"]):
-                res = self.tavily_search(self.response["online_search"])
-                self.response = self.send_message([self.response["online_search"], res], prompt_type="search_result")
-                continue
-
-            elif not check_if_empty(self.response["further_process"]):
-                self.response = self.send_message(self.response["further_process"], prompt_type="further_process")
-                continue
+                self.response = self.send_multiple_mesages(None, None, is_final=True)
 
     def auto_run(self, type="console"):
         self.initialise_all()
