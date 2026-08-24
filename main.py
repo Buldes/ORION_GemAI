@@ -63,6 +63,8 @@ from tavily import TavilyClient
 from supertonic import TTS
 import tempfile
 import subprocess
+import orion_gui
+from PySide6.QtWidgets import QApplication, QMainWindow
 
 class AgentOutput(BaseModel):
     further_process: str
@@ -164,6 +166,13 @@ class ORION_GemAI:
         # multiple promps at once
         self.total_promps = ""
 
+        # inteface
+        self.execute_interface = "console"
+
+        # gui
+        self.gui_class = None
+        self.pyside_app = None
+
     """LOGGING"""
 
     def get_current_timestamp(self):
@@ -192,7 +201,7 @@ class ORION_GemAI:
 
     """INIT"""
 
-    def initialise_all(self):
+    def initialise_all(self, start_thread=True):
         self.output("Initialise ORION...", "log")
         self.load_api_keys()
         self.load_settings()
@@ -204,9 +213,11 @@ class ORION_GemAI:
         if self.use_tts:
             self.init_tts()
         if self.use_stt:
-            self.init_stt()
+            self.init_stt(start_thread)
         if self.allow_tavily_search:
             self.init_tavily_search()
+        if self.execute_interface == "gui":
+            self.init_gui()
 
         self.output("Successfully initialised ORION", "log")
 
@@ -262,7 +273,8 @@ class ORION_GemAI:
         Du bist berechtigt, diese Werte über Python-Code in der Datei 'assets/json_files/character.json' (encoding="utf-8", indent=4) anzupassen, falls du deine Persönlichkeit verändern möchtest.
         Du MUSST in Deutsch antworten.
         Folgendes MUSST du ebenfalls befolgen: {self.added_ai_role}
-        Du MUSST so antworten, sodass TTS Modelle dein text flüssig sprechen können. Kein Markdown, sondern reiner Fließtext mit gezielten Satzzeichen
+        Du MUSST so antworten, sodass TTS Modelle dein text flüssig sprechen können. Kein Markdown, sondern reiner Fließtext mit gezielten Satzzeichen.
+        Du erhälst immer die aktuelle Zeit im Zeitformat %d-%m-%y %H:%M:%S
         """
 
     def init_character(self):
@@ -310,6 +322,8 @@ class ORION_GemAI:
 
             self.added_ai_role: str = all_settings["added_ai_role"]
 
+            self.execute_interface = all_settings["execute_interface"]
+
     def load_api_keys(self):
         self.output("Loading api key...", "log")
         with open(self.api_key_file, "r") as f:
@@ -321,6 +335,27 @@ class ORION_GemAI:
         self.output("Loading tavily...", "log")
         self.tavily = TavilyClient(api_key=self.tavily_api_key)
 
+    def init_gui(self):
+        self.output("Init GUI...", "log")
+
+        self.pyside_app = QApplication(sys.argv)
+        self.gui_class = orion_gui.MainWindow(
+            ai_response_func=self.send_message,
+            tts_func=lambda text: self.tts_say_text(text, deactivate_palyback_worker=True, return_wave=True),
+
+            py_execution_func=self.run_python_script,
+            cmd_execution_func=self.run_cmd_commands,
+            online_serach_func=self.tavily_search,
+
+            save_memory_func=self.save_new_memory,
+            save_chat_history_func=self.save_chat_history,
+            send_multiple_messages_func=self.send_multiple_mesages,
+
+            record_audio_func=self.record_audio,
+            transcript_audio_func=self.transcript_audio,
+        )
+
+
     """TTS"""
 
     def init_tts(self):
@@ -328,7 +363,7 @@ class ORION_GemAI:
         self.tts_voice = TTS(auto_download=True, model_dir=self.tts_voice_files + "/")
         self.syn_config = self.tts_voice.get_voice_style(voice_name=self.tts_voice_style)
 
-    def tts_say_text(self, text, wait_till_finish: bool = False):
+    def tts_say_text(self, text, wait_till_finish: bool = False, return_wave: bool = False, deactivate_palyback_worker: bool = False):
         self.output("Generating Voice...", "log")
         sentences = re.split(r'(?<=[.!?])\s+', text)
         audio_queue = queue.Queue()
@@ -346,17 +381,18 @@ class ORION_GemAI:
                 audio_queue.task_done()
                 time.sleep(0.1)
 
-        if self.playback_worker_thread is not None:
-            self.run_playback_worker_thread = False
-            while self.playback_worker_thread.is_alive():
-                time.sleep(0.1)
-            self.run_playback_worker_thread = True
-        self.playback_worker_thread = Thread(target=playback_worker, daemon=True)
-        self.playback_worker_thread.start()
+        if not deactivate_palyback_worker:
+            if self.playback_worker_thread is not None:
+                self.run_playback_worker_thread = False
+                while self.playback_worker_thread.is_alive():
+                    time.sleep(0.1)
+                self.run_playback_worker_thread = True
+            self.playback_worker_thread = Thread(target=playback_worker, daemon=True)
+            self.playback_worker_thread.start()
 
         if not text.strip():
             self.output("TTS: Text is empty.", "warning")
-            return
+            return None
 
         wav, sr = self.tts_voice.synthesize(
             text=text,
@@ -372,6 +408,10 @@ class ORION_GemAI:
         try:
             self.tts_voice.save_audio(wav, temp_path)
             data, fs = sf.read(temp_path, dtype='float32')
+
+            if return_wave:
+                return [data, fs]
+
             audio_queue.put((data, fs, text))
         finally:
             if os.path.exists(temp_path):
@@ -381,6 +421,7 @@ class ORION_GemAI:
             audio_queue.join()
 
         audio_queue.put(None)
+        return None
 
     def play_audio(self, file_path):
         data, fs = sf.read(file_path, dtype='float32')
@@ -389,7 +430,7 @@ class ORION_GemAI:
 
     """STT"""
 
-    def init_stt(self):
+    def init_stt(self, start_thread=True):
         self.output(f"Init STT with model size {self.whisper_model_size}...", "log")
         whisper_model_device = "cuda" if self.tts_and_stt_device == "gpu" else "cpu"
         openwakeword.utils.download_models()
@@ -397,9 +438,9 @@ class ORION_GemAI:
         self.whisper_model = WhisperModel(self.whisper_model_size, device=whisper_model_device, compute_type="int8")
 
         self.output(f"Speaking recognition mode: {self.speaking_recognition_mode}", "log")
-
-        self.listen_and_transcript_thread_value = Thread(target=self.listen_and_transcript_thread)
-        self.listen_and_transcript_thread_value.start()
+        if start_thread:
+            self.listen_and_transcript_thread_value = Thread(target=self.listen_and_transcript_thread)
+            self.listen_and_transcript_thread_value.start()
 
     def listen_and_transcript_thread(self):
         self.output("STT Model is running in background...", "log")
@@ -477,7 +518,7 @@ class ORION_GemAI:
             self.output(f"Status from OWW: {status}", "log")
         self.stt_audio_queue.put(np.frombuffer(indata, dtype=np.int16).copy())
 
-    def record_audio(self, duration: int = 4):
+    def record_audio(self, duration: int = -1):
         if duration > 0:
             self.output(f"Recording audio for {duration} sec....", "log")
             fs = 16_000
@@ -634,6 +675,13 @@ class ORION_GemAI:
             if e.status == "RESOURCE_EXHAUSTED":
                 self.output("RESOURCE_EXHAUSTED on Gemini API", "warn")
                 return {"further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
+            else:
+                self.output(f"Something went wrong  on Gemini API: {e}", "error")
+                return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
+        except google.genai.errors.ServerError as e:
+            if e.status == "UNAVAILABLE":
+                self.output("UNAVAILABLE on Gemini API", "warn")
+                return {"further_process": "", "content": "Aufgrund hoher Anfragen sind die Server derzeit nicht erreichbar. Versuche es später erneut oder verwende ein anderes Modell.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
             else:
                 self.output(f"Something went wrong  on Gemini API: {e}", "error")
                 return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
@@ -911,13 +959,24 @@ class ORION_GemAI:
 
                 self.response = self.send_multiple_mesages(None, None, is_final=True)
 
-    def auto_run(self, type="console"):
-        self.initialise_all()
+    def run_in_gui(self):
 
-        if type == "console":
-            self.output(f"Running programm in console.", "log")
+        self.gui_class.showMaximized()
+        sys.exit(self.pyside_app.exec())
 
+    def auto_run(self):
+        self.load_settings()
+
+        if self.execute_interface == "console":
+            self.output(f"Running programm in console...", "log")
+            self.initialise_all()
             self.run_in_console()
+        elif self.execute_interface == "gui":
+            self.output(f"Running programm in GUI...", "error")
+            self.initialise_all(start_thread=False)
+            self.run_in_gui()
+        else:
+            self.output(f"Interface {self.execute_interface} not found.", "error")
 
 if __name__ == '__main__':
     app = ORION_GemAI()

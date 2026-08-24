@@ -4,10 +4,10 @@
   "send_history": false,
 
   "allow_python_execution": true,
-  "auto_python_execution": true,
+  "auto_python_execution": false,
   "python_timeout": 60,
 
-  "use_stt": false,
+  "use_stt": true,
   "oww_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50, "score_threshold":  0.4},
   "activation_sound": true,
   "active_words": ["Ja?", "Yo!", "Ich höre.", "Yup!", "Was gibt es?", "Hmm?", "Bin da!", "Schieß los!", "Bin ganz Ohr!", "Was geht?", "Ja, bitte?", "Bereit.", "Ich lausche.", "ORION hört!", "Anwesend.", "Wie kann ich helfen?"],
@@ -17,7 +17,7 @@
 
   "use_tts": true,
   "tts_voice": "M1",
-  "tts_settings": {"speed": 1.3, "total_steps": 16},
+  "tts_settings": {"speed": 1.2, "total_steps": 16},
 
   "tts_and_stt_device": "gpu",
 
@@ -31,5 +31,7 @@
 
   "cuda_dir": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin",
 
-  "added_ai_role": ""
+  "added_ai_role": "",
+
+  "execute_interface": "gui"
 }

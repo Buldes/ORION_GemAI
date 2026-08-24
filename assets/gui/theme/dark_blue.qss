@@ -1,0 +1,118 @@
+/*DEFAULTS*/
+*{
+    font-size: 14px
+}
+
+/*GENERELL*/
+
+QLabel#toast {
+    background-color: rgba(30, 30, 30, 220);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+/*MAIN WIDGET*/
+#mainCentralWidget{
+    background-color: rgba(0, 0, 0, 100%)
+}
+
+/*TAB BAR*/
+#TabButton{
+    background-color: #1D1B23;
+    height: 40px;
+    min-width: 120px;
+    border-radius: 20px;
+}
+#TabButton:checked{
+    background-color: #064093
+}
+#TabButton:hover{
+    background-color: #033377
+}
+
+#top_bar_widget{
+    background-color: rgba(5, 64, 147, 48%);
+    min-height: 60px;
+    border-radius: 30px;
+}
+
+/*HOME PAGE*/
+#home_page_background {
+    background-color: rgba(2, 6, 23, 100%);
+    border-radius: 30px;
+}
+#conicalLayer {
+    background: qconicalgradient(cx:0.5, cy:0.5, angle:45,
+                                 stop: 0.00 rgba(17, 78, 186, 255),
+                                 stop: 0.25 rgba(5, 64, 147, 255),
+                                 stop: 0.50 rgba(30, 110, 210, 255),
+                                 stop: 0.75 rgba(90, 170, 255, 255),
+                                 stop: 1.00 rgba(17, 78, 186, 255));
+    border-radius: 30px;
+    margin: 10px;
+
+}
+
+#radialOverlayLayer {
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5,
+                                 fx:0.5, fy:0.5,
+                                 stop:0 rgba(2, 6, 23, 10),
+                                 stop:0.25 rgba(2, 6, 23, 150),
+                                 stop:0.6 rgba(2, 6, 23, 245),
+                                 stop:1 rgba(2, 6, 23, 255));
+    border-radius: 30px;
+    border: 10px solid rgba(2, 6, 23, 100%)
+}
+
+#text_input_line_edit{
+    border: none;
+    border-radius: 15px;
+    padding: 10px;
+    min-height: 50px;
+    max-height: 50px
+}
+
+#text_input_line_edit[is_active="True"]{
+    border-bottom: 2px solid #443DEF;
+    background-color: rgba(68, 70, 89, 57%);
+    color: #FFFFFF
+}
+#text_input_line_edit[is_active="True"]:hover{
+    border-bottom: 2px solid #7C77F2;
+    background-color: rgba(68, 70, 89, 57%);
+    color: #FFFFFF
+}
+#text_input_line_edit[is_active="True"]:focus{
+    border-bottom: 2px solid #5E56FF;
+    background-color: rgba(68, 70, 89, 57%);
+    color: #FFFFFF
+}
+#text_input_line_edit[is_active="False"]{
+    border-bottom: 2px solid #969696;
+    background-color: rgba(61, 61, 61, 26%);
+    color: #A5A5A5
+
+}
+
+#input_button{
+    padding: 10px;
+    border-radius: 15px;
+    margin-left: 10px;
+    min-width: 80px
+}
+
+#input_button[is_active="False"]{
+    background-color: #454545;
+    color: #A5A5A5
+}
+
+#input_button[is_active="True"]{
+    background-color: #443DEF;
+    color: #FFFFFF
+}
+#input_button[is_active="True"]:hover{
+    background-color: #7C77F2;
+}
+
