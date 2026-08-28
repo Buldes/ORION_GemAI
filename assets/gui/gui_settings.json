@@ -1,3 +1,5 @@
 {
-  "push-to-talk": "F7"
+  "push-to-talk": "F7",
+  "ui_sounds": 1,
+  "orion_volume": 0.5
 }

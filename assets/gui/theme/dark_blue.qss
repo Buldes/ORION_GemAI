@@ -116,3 +116,10 @@ QLabel#toast {
     background-color: #7C77F2;
 }
 
+#input_lable[is_active="True"]{
+    color: #FFFFFF
+}
+#input_lable[is_active="False"]{
+    color: #A5A5A5
+}
+

@@ -4,20 +4,19 @@ import sys
 import os
 import time
 import queue
-
-from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation
+from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation, QObject, QUrl
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QButtonGroup, QLineEdit,
     QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit
 )
 from PySide6.QtGui import QFontDatabase, QFont, Qt
+from PySide6.QtMultimedia import QSoundEffect
 import json
 import soundfile as sf
 import sounddevice as sd
 import numpy as np
-from narwhals import Object
-
+import keyboard
 
 class HomeAnimation(QThread):
     angle_changed = Signal(list)
@@ -128,6 +127,7 @@ class HomeAnimation(QThread):
 class OrionWorkflow(QThread):
     current_status = Signal(int)
     final_response = Signal(dict, object, int)
+    play_sound = Signal(str)
 
     def __init__(self, get_ai_response, text_to_speach, multi_message_ai_response):
         super().__init__()
@@ -147,7 +147,7 @@ class OrionWorkflow(QThread):
 
             if self.prompt_input or self.send_multi_message:
                 # ai response
-
+                self.play_sound.emit("orion_thinking")
                 if self.send_multi_message:
                     self.current_status.emit(5)
                     self.ai_response = self.multi_message_ai_response(None, None, is_final = True)
@@ -155,8 +155,10 @@ class OrionWorkflow(QThread):
                     self.current_status.emit(1)
                     self.ai_response = self.get_ai_response(self.prompt_input[0], self.prompt_input[1])
 
+
                 # tts
                 self.current_status.emit(2)
+                self.play_sound.emit("orion_finished")
                 self.tts_response = self.tts(self.ai_response["content"])
 
                 # send data back
@@ -180,7 +182,7 @@ class OrionWorkflow(QThread):
         self.send_multi_message = True
 
 class OrionExecution(QThread):
-    results = Signal(Object)
+    results = Signal(object)
     current_status = Signal(int)
     request_popup = Signal(str, str)
 
@@ -212,6 +214,16 @@ class OrionExecution(QThread):
                 self.all_results = []
 
                 # chat history
+                if "error" in all_keys:
+                    if self.data["error"] == "RESOURCE_EXHAUSTED":
+                        self.current_status.emit(7.1)
+                    elif self.data["error"] == "UNAVAILABLE":
+                        self.current_status.emit(7.2)
+                    else:
+                        self.current_status.emit(7)
+                    time.sleep(2)
+                    self.current_status.emit(7)
+
                 if "summary" in all_keys:
                     self.save_chat_history_func(self.data["summary"])
                     self.current_status.emit(4)
@@ -309,34 +321,47 @@ class SpeachToText(QThread):
     current_status = Signal(float)
     final_input = Signal(str)
     show_toast = Signal(str)
+    play_sound = Signal(str)
 
-    def __init__(self, settings, transcript_audio_func):
+    def __init__(self, settings, transcript_audio_func, predict_activation_word_func):
         super().__init__()
         self._is_running = True
         self.listening_mode = None # smart, voice, manually
 
         self.transcript_audio_func = transcript_audio_func
+        self.predict_activation_word_func = predict_activation_word_func
+
         self.settings = settings
         self.stt_audio_queue = queue.Queue()
         self.start_record = False
+        self.last_record_end_time = 0
+        self.ui_current_status = 0
+        self.has_already_happened = False
     
     def run(self):
         
         with sd.InputStream(samplerate=16000, channels=1, blocksize=1280, dtype='int16', callback=self.audio_callback):
 
             while self._is_running:
-                
-                if self.listening_mode == "smart":
-                    pass
-                
-                elif self.listening_mode == "voice":
-                    pass
-                
-                elif self.listening_mode == "manually":
-                    pass
+
+                if self.ui_current_status != 0:
+                    time.sleep(0.01)
+                    with self.stt_audio_queue.mutex:
+                        self.stt_audio_queue.queue.clear()
+                    self.last_record_end_time = time.time()
+                    continue
+
+                if not self.settings["use_stt"]:
+                    with self.stt_audio_queue.mutex:
+                        self.stt_audio_queue.queue.clear()
+                    time.sleep(0.01)
+                    continue
 
                 if self.start_record:
+                    self.play_sound.emit("orion_listening")
+
                     res = self.record_audio()
+
                     if res is not False:
                         self.current_status.emit(6.3)
                         transcripted = self.transcript_audio_func(audio_data=res)
@@ -350,9 +375,37 @@ class SpeachToText(QThread):
                         self.current_status.emit(0)
 
                     self.start_record = False
-                
-                time.sleep(0.1)
-        
+
+                    with self.stt_audio_queue.mutex:
+                        self.stt_audio_queue.queue.clear()
+                    self.last_record_end_time = time.time()
+
+                else:
+                    if self.listening_mode == "smart":
+                        pass
+
+                    elif self.listening_mode == "voice":
+                        try:
+                            audio_chunk = self.stt_audio_queue.get(timeout=0.1)
+                            prediction = self.predict_activation_word_func(audio_chunk)
+
+                            if time.time() - self.last_record_end_time < 2:
+                                with self.stt_audio_queue.mutex:
+                                    self.stt_audio_queue.queue.clear()
+                                continue
+
+                            if prediction:
+                                self.start_record = True
+
+                            with self.stt_audio_queue.mutex:
+                                self.stt_audio_queue.queue.clear()
+
+                        except queue.Empty:
+                            pass
+
+                    elif self.listening_mode == "manually":
+                        time.sleep(0.01)
+
     def stop(self):
         self._is_running = False
         
@@ -421,7 +474,12 @@ class SpeachToText(QThread):
         audio_flatten = np.concatenate(recorded_chunks).astype(np.float32) / 32768.0
 
         return audio_flatten
-        
+
+class GlobalHotkeyListener(QObject):
+    triggered = Signal(str)
+
+    def start_listening(self):
+        keyboard.add_hotkey("F7", lambda: self.triggered.emit("F7"))
 
 class MainWindow(QMainWindow):
 
@@ -430,7 +488,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, tts_func, ai_response_func, py_execution_func, cmd_execution_func, online_serach_func,
                  save_chat_history_func, save_memory_func, send_multiple_messages_func, record_audio_func,
-                 transcript_audio_func):
+                 transcript_audio_func, predict_activation_word_func):
         # <editor-fold desc="GENEREL">
         super().__init__()
         self.toast_fade_in = None
@@ -452,6 +510,8 @@ class MainWindow(QMainWindow):
             self.orion_setting = json.load(file)
         with open(self.gui_settings_file, "r") as file:
             self.gui_setting = json.load(file)
+
+        self.ui_sound_volume = self.gui_setting["ui_sounds"]
         # </editor-fold>
 
         # <editor-fold desc="ALL IMPORTED FUNCTIONS">
@@ -465,8 +525,21 @@ class MainWindow(QMainWindow):
         self.save_chat_history_func = save_chat_history_func
         self.save_memory_func = save_memory_func
 
-        self.record_audio_func=record_audio_func
-        self.transcript_audio_func=transcript_audio_func
+        self.record_audio_func = record_audio_func
+        self.transcript_audio_func = transcript_audio_func
+        self.predict_activation_word_func = predict_activation_word_func
+        # </editor-fold>
+
+
+        # <editor-fold desc="UI SOUND FX">
+        # UI Sounds
+        self.ui_sounds = {}
+        for sfx in os.listdir(rf"{self.working_dir}/assets/gui/sounds"):
+            sfx_name = sfx.split(".")[0]
+            self.ui_sounds[sfx_name] = QSoundEffect(self)
+            self.ui_sounds[sfx_name].setVolume(self.ui_sound_volume)
+            self.ui_sounds[sfx_name].setSource(QUrl.fromLocalFile(rf"{self.working_dir}/assets/gui/sounds/{sfx}"))
+
         # </editor-fold>
 
         # home page
@@ -549,6 +622,7 @@ class MainWindow(QMainWindow):
         self.orion_worklfow = OrionWorkflow(get_ai_response=self.ai_response_func, text_to_speach=self.tts_func, multi_message_ai_response=self.send_multiple_messages_func)
         self.orion_worklfow.current_status.connect(self.on_status_changed)
         self.orion_worklfow.final_response.connect(self.process_orion_output)
+        self.orion_worklfow.play_sound.connect(self.play_sound)
         self.orion_worklfow.start()
 
         self.orion_execution = OrionExecution(
@@ -566,12 +640,19 @@ class MainWindow(QMainWindow):
 
         self.stt_thread = SpeachToText(
             settings=self.orion_setting,
-            transcript_audio_func=self.transcript_audio_func
+            transcript_audio_func=self.transcript_audio_func,
+            predict_activation_word_func = self.predict_activation_word_func
         )
         self.stt_thread.current_status.connect(self.on_status_changed)
         self.stt_thread.show_toast.connect(self.show_toast)
         self.stt_thread.final_input.connect(lambda text: self.orion_input.emit(text, "transcript"))
+        self.stt_thread.play_sound.connect(self.play_sound)
+        self.stt_thread.set_mode(self.orion_setting["speaking_recognition_mode"])
         self.stt_thread.start()
+
+        self.hotkey_listener = GlobalHotkeyListener()
+        self.hotkey_listener.triggered.connect(self.hotkey_pressed)
+        self.hotkey_listener.start_listening()
         # </editor-fold>
 
         # <editor-fold desc="WORKFLOW AND SIGNALS">
@@ -636,10 +717,22 @@ class MainWindow(QMainWindow):
         if self.orion_setting["use_stt"]:
             if self.orion_setting["speaking_recognition_mode"] == "manually":
                 self.orion_info_label.setText("Push to Talk aktiv")
+
                 self.orion_control_element = QPushButton(f"Push-to-Talk aktiv")
                 self.orion_control_element.clicked.connect(self.audio_manuel_input)
                 self.orion_control_element.setObjectName("input_button")
+
                 layer3_grid.addWidget(self.orion_control_element, 2, 0, 1, 2)
+
+            elif self.orion_setting["speaking_recognition_mode"] == "voice":
+                self.orion_info_label.setText("Sprach aktivierung aktiv")
+
+                self.orion_control_element = QLabel(f"Sprachaktivierung aktiv")
+                self.orion_control_element.setObjectName("input_lable")
+                self.orion_control_element.setAlignment(Qt.AlignCenter)
+
+                layer3_grid.addWidget(self.orion_control_element, 2, 0, 1, 2)
+
             else:
                 self.orion_info_label.setText("Adaptives zuhören aktiv")
         else:
@@ -761,12 +854,14 @@ class MainWindow(QMainWindow):
         self.current_status = 1
         self.orion_worklfow.feed_data(text, prompt_type)
 
-    def process_orion_output(self, output: dict, wav_data: object, fs: int):
+    def process_orion_output(self, output: dict, wav_data: list, fs: int):
 
-        # set rms animatiom and play sound
+        # set rms animatiom and play scaled sound
         rms_values, chunk_time, total_length = self.wav_to_rms(wav_data, fs)
+        scaled_audio = wav_data * self.gui_setting["orion_volume"]
+
         self.home_animation_worker.rms_over_time(rms_values, chunk_time, total_length)
-        sd.play(wav_data, fs)
+        sd.play(scaled_audio, fs)
 
         # execute
         self.orion_execution.feed_data(output)
@@ -777,9 +872,9 @@ class MainWindow(QMainWindow):
             sd.stop(True)  # stop every current sd.play-output
             self.home_animation_worker.rms_over_time([0], 0.5, 1)
 
-        self.current_status = status
-
         self.active_on_status(status)
+
+        self.current_status = status
 
         # input active
         if status == 0:
@@ -821,6 +916,8 @@ class MainWindow(QMainWindow):
             self.home_animation_worker.speed_over_time(5, 1)
 
             # execution results
+
+        # STT
         elif status == 6.1:
             self.orion_info_label.setText("Warte aufs sprechen...")
             self.home_animation_worker.speed_over_time(5, 1)
@@ -833,6 +930,17 @@ class MainWindow(QMainWindow):
         elif status == 6.4:
             self.orion_info_label.setText("Keine Stimme erkannt.")
             self.home_animation_worker.speed_over_time(5, 1)
+
+        # error
+        elif status == 7:
+            self.orion_info_label.setText("Es ist ein Fehler aufgetreten")
+            self.home_animation_worker.speed_over_time(3, 1)
+        elif status == 7.1:
+            self.orion_info_label.setText(f"Limit der API erreicht (im Model {self.orion_setting['gemini_version']})")
+            self.home_animation_worker.speed_over_time(3, 1)
+        elif status == 7.2:
+            self.orion_info_label.setText("Google Server überlastet")
+            self.home_animation_worker.speed_over_time(3, 1)
 
     def request_user(self, title, text):
         reply = QMessageBox.question(
@@ -850,16 +958,35 @@ class MainWindow(QMainWindow):
         else:
             self.ui_current_status.emit(0)
 
+    def hotkey_pressed(self, key):
+        # manages all hot keys
+        if key == "F7":
+            if self.orion_setting["use_stt"]:
+                self.stt_thread.start_recording()
+
     # deactivate / activate ui elements
 
     def active_on_status(self, status):
+        # threads
+        self.stt_thread.ui_current_status = status
+
+        # ui elements
         is_active_str = "True" if status == 0 else "False"
         if self.orion_setting["use_stt"]:
+            self.orion_control_element.setProperty("is_active", is_active_str)
+            self.orion_control_element.style().unpolish(self.orion_control_element)
+            self.orion_control_element.style().polish(self.orion_control_element)
             if self.orion_setting["speaking_recognition_mode"] == "manually":
-
-                self.orion_control_element.setProperty("is_active", is_active_str)
-                self.orion_control_element.style().unpolish(self.orion_control_element)
-                self.orion_control_element.style().polish(self.orion_control_element)
+                pass
+            elif self.orion_setting["speaking_recognition_mode"] == "voice":
+                if status == 0:
+                    self.orion_control_element.setText(f"Drücke -{self.gui_setting['push-to-talk']}- oder sage 'Orion'")
+                elif status == 6.1:
+                    self.orion_control_element.setText(f"Fange an zu sprechen...")
+                elif status == 6.2:
+                    self.orion_control_element.setText(f"")
+                else:
+                    self.orion_control_element.setText("Bitte warten...")
             else:
                 pass
         else:
@@ -868,8 +995,11 @@ class MainWindow(QMainWindow):
                 self.orion_control_element[i].setProperty("is_active", is_active_str)
                 self.orion_control_element[i].style().unpolish(self.orion_control_element[i])
                 self.orion_control_element[i].style().polish(self.orion_control_element[i])
-            if status == 0:
+            if status == 0 and int(self.current_status):
                 self.orion_control_element[0].setPlainText("")
+
+    def play_sound(self, sound_name):
+        self.ui_sounds[sound_name].play()
 
     """STATIC FUNCTIONS"""
 
@@ -956,7 +1086,7 @@ if __name__ == "__main__":
 
     # sample functions
     def ai_res(text: str, prompt_type: str):
-        time.sleep(0.5)
+        time.sleep(.5)
         test_comp = {"content":"Hallo, dies ist kein KI generierter Inhalt, sonder lediglich ein Test. Bitte starte die Datei: Mein punkt p y um das programm korrekt zu starten."}
         return test_comp
 
@@ -976,6 +1106,7 @@ if __name__ == "__main__":
         send_multiple_messages_func=lambda *args, is_final: "No Func",
         record_audio_func=lambda *args: "No Func",
         transcript_audio_func=lambda *args, audio_data: "No func",
+        predict_activation_word_func=lambda *args: False,
     )
     window.showMaximized()
 

@@ -1,5 +1,6 @@
 {
-  "gemini_version": "gemini-3.6-flash",
+  "llm_provider": "google",
+  "llm_version": "gemini-3.5-flash",
 
   "send_history": false,
 
@@ -7,7 +8,7 @@
   "auto_python_execution": false,
   "python_timeout": 60,
 
-  "use_stt": true,
+  "use_stt": false,
   "oww_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50, "score_threshold":  0.4},
   "activation_sound": true,
   "active_words": ["Ja?", "Yo!", "Ich höre.", "Yup!", "Was gibt es?", "Hmm?", "Bin da!", "Schieß los!", "Bin ganz Ohr!", "Was geht?", "Ja, bitte?", "Bereit.", "Ich lausche.", "ORION hört!", "Anwesend.", "Wie kann ich helfen?"],

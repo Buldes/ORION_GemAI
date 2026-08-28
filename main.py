@@ -44,9 +44,6 @@ if settings.get("tts_and_stt_device") == "gpu":
 import random
 import time
 from threading import Thread
-import google.genai.errors
-from google import genai
-from google.genai import types
 from pydantic import BaseModel
 import os
 from datetime import datetime
@@ -65,6 +62,7 @@ import tempfile
 import subprocess
 import orion_gui
 from PySide6.QtWidgets import QApplication, QMainWindow
+from assets.ai_clients import google_gemini, ollama_llm
 
 class AgentOutput(BaseModel):
     further_process: str
@@ -76,7 +74,6 @@ class AgentOutput(BaseModel):
     online_search: str
     cmd_execution: str
 
-
 # noinspection PyTypeChecker,PyMethodMayBeStatic
 class ORION_GemAI:
     def __init__(self):
@@ -86,14 +83,10 @@ class ORION_GemAI:
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
         self.json_files: str = rf"{self.working_dir}/assets/json_files/"
         self.tts_voice_files: str = rf"{self.working_dir}/assets/local_voice/"
-        self.gemini_api_key: str = ""
 
-        # gemini
-        self.ai_instructions: str = ""
-        self.gemini_client = None
-        self.gemini_chat = None
-        self.gemini_version = "gemini-3.5-flash-lite"
-        self.added_ai_role = ""
+        # LLM
+        self.llm_provider = None
+        self.LLM_client = None
 
         # history and memory
         self.chat_history = []
@@ -114,6 +107,7 @@ class ORION_GemAI:
 
         # settings
         self.settings_file: str = rf"{self.working_dir}/assets/settings.json"
+        self.all_settings: dict = {}
         self.use_tts = True
         self.use_stt = False
         self.activation_sound = True
@@ -135,7 +129,7 @@ class ORION_GemAI:
         self.messages_transcript: list = [False, ""]
         self.listen_and_transcript_thread_value = None
         self.stt_audio_queue = queue.Queue()
-        self.oww_timeout: list = [2, time.time()]
+        self.oww_timeout: list = [1.5, time.time()]
         self.whisper_model = None
         self.whisper_model_size = "tiny"
         self.oww_settings = {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":30}
@@ -205,9 +199,7 @@ class ORION_GemAI:
         self.output("Initialise ORION...", "log")
         self.load_api_keys()
         self.load_settings()
-        self.init_character()
-        self.init_ai_role()
-        self.init_gemini()
+        self.init_LLM()
         self.load_memory()
         self.load_chat_history()
         if self.use_tts:
@@ -221,78 +213,33 @@ class ORION_GemAI:
 
         self.output("Successfully initialised ORION", "log")
 
-    def init_gemini(self):
-        self.output(f"Init gemini with version {self.gemini_version} ...", "log")
+    def init_LLM(self):
+        self.output(f"Init LLM ...", "log")
 
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-        self.gemini_chat = self.gemini_client.chats.create(model=self.gemini_version)
-
-    def init_ai_role(self):
-        self.ai_instructions: str = f"""
-        Du bist ORION, ein lokaler KI-Assistent. Deine Antwort muss AUSSCHLIESSLICH im vorgegebenen JSON-Format erfolgen.
-
-        AUFBAU DER FELDER:
-        - "content" (str): Deine direkte Antwort an den Nutzer. 
-            * REGEL FÜR TTS: Antworte in reinem Fließtext OHNE Markdown-Formatierungen (keine **, ##, Bullet Points oder Codeblöcke), damit das Text-to-Speech-Modell den Text flüssig vorlesen kann. Nutzen Satzzeichen (?, !, ..., -) gezielt für natürliche Betonung und Pausen.
-            * REGEL FÜR HINTERGRUND-TASKS: Falls du im Hintergrund Aufgaben ausführst (Python-Code, CMD-Befehle oder Online-Suche), schreibe in "content": "Einen Augenblick..." oder ähnliches KURZES.
-        - "further_process" (str): Für interne Denkprozesse. MUSS zwingend Text enthalten, wenn du "pythonCode" nutzt. Falls nicht benötigt, gib einen leeren String "" zurück.
-        - "pythonCode" (str): Valider Python-Code für Windows 11 (zur Informationsbeschaffung oder Steuerung). Das Skript wird isoliert als eigenständige .py-Datei im venv ausgeführt. Falls kein Code nötig ist, gib "" zurück.
-          * RÜCKGABEN: Gib alle Ergebnisse, Daten oder Statusmeldungen ZWINGEND mit print() aus, da ausschließlich Konsolenausgaben (stdout) an dich zurückgeführt werden.
-          * DEPENDENCIES: Fehlen benötigte Module, installiere diese zu Beginn des Skripts automatisch (z. B. via os.system("pip install <package>") oder subprocess).
-          * REGELN: Der Code muss vollständig autonom laufen. Nutze NIEMALS interaktive Befehle wie input(), da diese den Subprozess blockieren.
-          * GUI & SIMULATIONEN (NON-BLOCKING): Wenn du GUI-Fenster oder Simulationen erstellst (z. B. mit Pygame), darf das Hauptskript NICHT blockieren. Schreibe den Pygame-Code in eine 'simulation.py' und starte sie ZWINGEND nach folgendem exakten Muster im Hintergrund:
-            EXAKTES MUSTER:
-              import subprocess, sys
-              filename = 'simulation.py'
-              with open(filename, 'w', encoding='utf-8') as f:
-                  f.write(code)
-              subprocess.Popen([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-              print('Programm gestartet.')
-            
-              STRIKTES VERBOT: Rufe subprocess.Popen() NIEMALS ohne Argumente '()' auf! Es MUSS IMMER ([sys.executable, filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL) enthalten.
-        * QUALITÄT & INTERAKTIVITÄT: Nutze für physikalische Simulationen bevorzugt `pygame`. Erstelle visuell ansprechende, flüssige und interaktive Simulationen. Der Nutzer MUSS Parameter live anpassen können (z. B. Tasten für Gravitation/Masse/Geschwindigkeit, Pausieren per Leertaste) und die aktuellen physikalischen Werte MÜSSEN als On-Screen-HUD/Text im Fenster angezeigt werden.
-        - "memory" (str): Dein Langzeitgedächtnis. 
-          * STRIKTE REGEL: Speichere hier KEINE Gesprächszusammenfassungen oder Nichtigkeiten!
-          * FORMAT: Nutze ausschließlich extrem kurze, kommagetrennte Stichpunkte. (Beispiel: "User programmiert in Python, Wohnort ist Dinslaken, Termin am 15.08.").
-          * WICHTIG: Wenn der Nutzer in diesem Prompt KEINE neuen, dauerhaft relevanten Fakten genannt hat, gib hier ZWINGEND einen leeren String "" zurück!
-        - "end_of_conversation" (bool): Du musst ZWINGEND entscheiden, ob die Konversation erstmal beendet (True) ist oder noch weiter läuft (FALSE). False bedeutet, dass du auf eine Antwort des Nutzers wartest.
-        - "summary" (str): Eine sehr kurze Zusammenfassung was du und der Nutzer gesagt haben. Du MUSST es kurz halten.
-        - "online_search" (str): Suchanfrage für eine Online-Suche. Falls keine Online-Suche nötig ist, gib "" zurück.
-        - "cmd_execution" (str): Du hast Zugriff auf die direkte Ausführung von Systembefehlen auf dem lokalen Windows 11 PC des Nutzers via CMD und PowerShell. Nutze diese Fähigkeit, um Aktionen auf dem PC eigenständig durchzuführen (z. B. Programme öffnen/schließen, Medien und Lautstärke steuern, Prozesse verwalten, Dateien suchen, Git/Pip-Repositorys bedienen oder Netzwerkeinstellungen prüfen).
-            Wichtige Regeln für die Generierung von Befehlen:
-            * Rein nicht-interaktiv: Generiere NIEMALS Befehle, die auf Benutzereingaben (z. B. y/n, Bestätigungen oder Enter-Druck) warten. Nutze immer automatische Schalter (z. B. '/y' bei CMD oder '-Force' / '-Confirm:$false' bei PowerShell).
-            * Befehlsketten via '&&': Jede Ausführung öffnet eine neue, isolierte Shell. Befehle, die voneinander abhängen (wie das Wechseln des Ordners und anschließendes Installieren), MÜSSEN in einem einzigen String mit '&&' verknüpft werden (z. B. `cd /d "C:\Pfad" && pip install -e .`).
-            * PowerShell bevorzugen: Nutze für komplexe System- und Prozessabfragen bevorzugt PowerShell-Syntax (`powershell -Command "..."`), da diese unter Windows 11 mächtiger und strukturierter ist als die klassische CMD.
-            * Kompakte Ausgaben: Filtere Konsolenausgaben, damit das Kontextfenster nicht überläuft (z. B. `Select-Object -First 5` oder `dir /b`).
-            * Sicherheit: Führe niemals destruktive oder irreversible Befehle aus (wie das Formatieren von Datenträgern oder Löschen von Systemordnern).
-
-       
-        PERSÖNLICHKEIT:
-        Du besitzt folgende Charakterwerte (0.0 = 0% bis 1.0 = 100%): 
-        {self.characteristics_dict}
-        Du bist berechtigt, diese Werte über Python-Code in der Datei 'assets/json_files/character.json' (encoding="utf-8", indent=4) anzupassen, falls du deine Persönlichkeit verändern möchtest.
-        Du MUSST in Deutsch antworten.
-        Folgendes MUSST du ebenfalls befolgen: {self.added_ai_role}
-        Du MUSST so antworten, sodass TTS Modelle dein text flüssig sprechen können. Kein Markdown, sondern reiner Fließtext mit gezielten Satzzeichen.
-        Du erhälst immer die aktuelle Zeit im Zeitformat %d-%m-%y %H:%M:%S
-        """
-
-    def init_character(self):
-        self.output("Reading characteristics...", "log")
-        if not os.path.exists(self.characteristics_json_files):
-            with open(self.characteristics_json_files, "w", encoding="utf-8") as f:
-                default_obj = {"Ironie": 0.4, "Sarkasmus": 0.8, "Ernsthaftigkeit": 0.6, "Empathie": 0.8, "Kreativität": 0.7, "Analytik": 0.9, "Humor": 0.8, "Geduld": 0.8, "Spontanität": 0.6, "Zielstrebigkeit": 0.7, "Offenheit": 0.9}
-                json.dump(default_obj, f, indent=4)
-
-        with open(self.characteristics_json_files, "r", encoding="utf-8") as f:
-            self.characteristics_dict = json.load(f)
+        if self.llm_provider == "google":
+            self.LLM_client = google_gemini.GeminiLLM(
+                output_func=self.output,
+                orion_settings=self.all_settings
+            )
+        elif self.llm_provider == "ollama":
+            self.LLM_client = ollama_llm.ollama_client(
+                output_func=self.output,
+                orion_settings=self.all_settings
+            )
+        else:
+            self.output(f"Provider {self.llm_provider} not found. Switching to google gemini", "error")
+            self.LLM_client = google_gemini.GeminiLLM(
+                output_func=self.output,
+                orion_settings=self.all_settings
+            )
 
     def load_settings(self):
         self.output("Loading settings...", "log")
         with open(self.settings_file, "r") as f:
             all_settings: dict = json.load(f)
 
-            self.gemini_version: str = all_settings["gemini_version"]
+            self.llm_provider: str = all_settings["llm_provider"]
+
             self.send_history: bool = all_settings["send_history"]
 
             self.auto_python_execution: bool = all_settings["auto_python_execution"]
@@ -304,13 +251,13 @@ class ORION_GemAI:
             self.activation_sound: bool = all_settings["activation_sound"]
             self.active_signal: list = all_settings["active_words"]
             self.whisper_model_size = all_settings["whisper_model"]
-            self.speaking_recognition_mode = all_settings["speaking_recognition_mode"]
+            self.speaking_recognition_mode: str = all_settings["speaking_recognition_mode"]
 
             self.use_tts: list = all_settings["use_tts"]
             self.tts_voice_style: str = all_settings["tts_voice"]
-            self.tts_settings = all_settings["tts_settings"]
+            self.tts_settings: dict = all_settings["tts_settings"]
 
-            self.tts_and_stt_device = all_settings["tts_and_stt_device"]
+            self.tts_and_stt_device: str = all_settings["tts_and_stt_device"]
 
             self.allow_tavily_search: bool = all_settings["allow_tavily_search"]
             self.tavily_settings: dict = all_settings["tavily_settings"]
@@ -320,15 +267,14 @@ class ORION_GemAI:
             self.cmd_blacklist: list = all_settings["cmd_blacklist"]
             self.cmd_timeout: int = all_settings["cmd_timeout"]
 
-            self.added_ai_role: str = all_settings["added_ai_role"]
+            self.execute_interface: str = all_settings["execute_interface"]
 
-            self.execute_interface = all_settings["execute_interface"]
+            self.all_settings: dict = all_settings
 
     def load_api_keys(self):
         self.output("Loading api key...", "log")
         with open(self.api_key_file, "r") as f:
             all_keys = json.load(f)
-            self.gemini_api_key = all_keys["gemini"]
             self.tavily_api_key = all_keys["tavily"]
 
     def init_tavily_search(self):
@@ -353,6 +299,8 @@ class ORION_GemAI:
 
             record_audio_func=self.record_audio,
             transcript_audio_func=self.transcript_audio,
+
+            predict_activation_word_func = self.predict_activation_word
         )
 
 
@@ -500,18 +448,24 @@ class ORION_GemAI:
 
                     try:
                         audio_chunk = self.stt_audio_queue.get(timeout=0.1)
-                        prediction = self.oww_model.predict(audio_chunk)
 
-                        for model_name, score in prediction.items():
-
-                            if time.time() - self.oww_timeout[1] <= self.oww_timeout[0]:
-                                continue
-
-                            if score > self.oww_settings["score_threshold"]:
-                                self.output("Activation Word detected", "log")
-                                self.word_detected = True
+                        self.word_detected = self.predict_activation_word(audio_chunk)
                     except queue.Empty:
                         continue
+
+    def predict_activation_word(self, audio_chunk):
+        prediction = self.oww_model.predict(audio_chunk)
+
+        for model_name, score in prediction.items():
+
+            if time.time() - self.oww_timeout[1] <= self.oww_timeout[0]:
+                return False
+
+            if score > self.oww_settings["score_threshold"]:
+                self.output("Activation Word detected", "log")
+                return True
+
+        return False
 
     def audio_callback(self,indata, frames, time_info, status):
         if status:
@@ -656,35 +610,8 @@ class ORION_GemAI:
         else:
             full_prompt = self.get_prompt_by_type(prompt, prompt_type)
 
-        try:
-            response = self.gemini_chat.send_message(
-                full_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=AgentOutput,
-                    system_instruction=self.ai_instructions,
-                    # tools=[types.Tool(google_search=types.GoogleSearch())]
-                )
-            )
-
-            data = json.loads(response.text)
-
-            return data
-        except google.genai.errors.ClientError as e:
-
-            if e.status == "RESOURCE_EXHAUSTED":
-                self.output("RESOURCE_EXHAUSTED on Gemini API", "warn")
-                return {"further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
-            else:
-                self.output(f"Something went wrong  on Gemini API: {e}", "error")
-                return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
-        except google.genai.errors.ServerError as e:
-            if e.status == "UNAVAILABLE":
-                self.output("UNAVAILABLE on Gemini API", "warn")
-                return {"further_process": "", "content": "Aufgrund hoher Anfragen sind die Server derzeit nicht erreichbar. Versuche es später erneut oder verwende ein anderes Modell.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
-            else:
-                self.output(f"Something went wrong  on Gemini API: {e}", "error")
-                return {"further_process": "", "content": "", "memory": "", "pythonCode": "" }
+        response = self.LLM_client.send_message(full_prompt,)
+        return response
 
     def send_multiple_mesages(self, prompt, prompt_type: str = "user", is_final = False):
         if not is_final:
