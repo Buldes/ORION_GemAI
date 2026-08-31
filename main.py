@@ -235,7 +235,7 @@ class ORION_GemAI:
 
     def load_settings(self):
         self.output("Loading settings...", "log")
-        with open(self.settings_file, "r") as f:
+        with open(self.settings_file, "r", encoding="utf-8") as f:
             all_settings: dict = json.load(f)
 
             self.llm_provider: str = all_settings["llm_provider"]
@@ -273,7 +273,7 @@ class ORION_GemAI:
 
     def load_api_keys(self):
         self.output("Loading api key...", "log")
-        with open(self.api_key_file, "r") as f:
+        with open(self.api_key_file, "r", encoding="utf-8") as f:
             all_keys = json.load(f)
             self.tavily_api_key = all_keys["tavily"]
 
@@ -300,9 +300,11 @@ class ORION_GemAI:
             record_audio_func=self.record_audio,
             transcript_audio_func=self.transcript_audio,
 
-            predict_activation_word_func = self.predict_activation_word
+            predict_activation_word_func = self.predict_activation_word,
+            get_current_chat_history = lambda : self.chat_history,
+            get_current_memory= lambda : self.permanent_memory,
+            save_edited_memory_func=self.save_edited_new_memory
         )
-
 
     """TTS"""
 
@@ -547,6 +549,9 @@ class ORION_GemAI:
     """PROMPT"""
 
     def get_prompt_by_type(self, prompt, prompt_type: str = "user", no_memorys = False, no_history=False):
+
+        self.save_chat_history(prompt, prompt_type)
+
         full_prompt: str = ""
         if prompt_type == "user":
             full_prompt = f"""
@@ -630,7 +635,17 @@ class ORION_GemAI:
 
     def save_new_memory(self, n_memory):
         self.output("Saving new Memory", "log")
+        if not n_memory.strip():
+            return
+
         self.permanent_memory.append({"time": self.get_current_timestamp(), "content":n_memory})
+        with open(self.permanent_memory_file, "w", encoding="utf-8") as f:
+            json.dump(self.permanent_memory, f, indent=4, ensure_ascii=False)
+
+    def save_edited_new_memory(self, n_memory):
+        self.output("Saving edited Memory", "log")
+
+        self.permanent_memory = n_memory
         with open(self.permanent_memory_file, "w", encoding="utf-8") as f:
             json.dump(self.permanent_memory, f, indent=4, ensure_ascii=False)
 
@@ -640,13 +655,13 @@ class ORION_GemAI:
         if not os.path.exists(self.permanent_memory_file):
             return
 
-        with open(self.permanent_memory_file, "r") as f:
+        with open(self.permanent_memory_file, "r", encoding="utf-8") as f:
             self.permanent_memory = json.load(f)
 
-    def save_chat_history(self, n_chat):
+    def save_chat_history(self, n_chat, role):
         self.output("Saving new Chat History", "log")
 
-        self.chat_history.append({"time": self.get_current_timestamp(), "content":n_chat})
+        self.chat_history.append({"time": self.get_current_timestamp(), "content":n_chat, "role":role})
         with open(self.chat_history_file, "w", encoding="utf-8") as f:
             json.dump(self.chat_history, f, indent=4, ensure_ascii=False)
 
@@ -656,7 +671,7 @@ class ORION_GemAI:
         if not os.path.exists(self.chat_history_file):
             return
 
-        with open(self.chat_history_file, "r") as f:
+        with open(self.chat_history_file, "r", encoding="utf-8") as f:
             self.chat_history = json.load(f)
 
     """ONLINE SEARCH"""
@@ -681,6 +696,9 @@ class ORION_GemAI:
     """CMD EXECUTION"""
 
     def run_cmd_commands(self, command):
+
+        self.save_chat_history(command, "cmd_script")
+
         if not self.allow_cmd_execution:
             return "FEHLER: CMD Execution ist abgeschaltet"
 
@@ -722,8 +740,10 @@ class ORION_GemAI:
     def run_python_script(self, script):
         python_response = []
 
+        self.save_chat_history(script, "python_code_script")
+
         try:
-            print(script)
+
             if "subprocess.Popen()" in script or "subprocess.Popen([sys.executable, filename])" in script:
                 if "subprocess.Popen()" in script:
                     script = script.replace(
@@ -792,7 +812,7 @@ class ORION_GemAI:
 
             self.console_print(f"\n{self.response['content']}\n", "italic cyan")
             try:
-                self.save_chat_history(self.response["summary"])
+                self.save_chat_history(self.response["content"], "ai")
                 # speaking_recognition_mode
                 if self.speaking_recognition_mode == "smart":
                     self.end_of_conversation = self.response["end_of_conversation"]

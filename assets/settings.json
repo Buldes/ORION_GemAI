@@ -1,6 +1,7 @@
 {
-  "llm_provider": "google",
+  "llm_provider": "gemini",
   "llm_version": "gemini-3.5-flash",
+  "ai_temperature": 0.9,
 
   "send_history": false,
 

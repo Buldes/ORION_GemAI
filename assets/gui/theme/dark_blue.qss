@@ -43,6 +43,7 @@ QLabel#toast {
     background-color: rgba(2, 6, 23, 100%);
     border-radius: 30px;
 }
+
 #conicalLayer {
     background: qconicalgradient(cx:0.5, cy:0.5, angle:45,
                                  stop: 0.00 rgba(17, 78, 186, 255),
@@ -123,3 +124,140 @@ QLabel#toast {
     color: #A5A5A5
 }
 
+/*HISTORY PAGE*/
+#history_page{
+    border-radius: 30px;
+    background-color: transparent;
+}
+QScrollArea{
+    border-radius: 30px;
+
+    background-color: rgba(2, 6, 23, 100%);
+    padding: 10px
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/*TEXT BUBBLES*/
+
+#TextBubble #bubble_frame{
+    background-color: #443DEF;
+    border-radius: 20px;
+}
+#TextBubble[text_type="user"] #bubble_frame {
+    background-color: #443DEF;
+}
+#TextBubble[text_type="ai"] #bubble_frame {
+    background-color: #9855FF;
+}
+#TextBubble[text_type="cmd"] #bubble_frame {
+    background-color: rgba(16, 48, 32, 230);
+}
+#TextBubble[text_type="cmd_script"] #bubble_frame {
+    background-color: rgba(40, 44, 52, 230);
+}
+#TextBubble[text_type="search_result"] #bubble_frame {
+    background-color: rgba(20, 60, 80, 230);
+}
+#TextBubble[text_type="pythonCode"] #bubble_frame {
+    background-color: rgba(35, 35, 60, 90%);
+}
+#TextBubble[text_type="python_code_script"] #bubble_frame {
+    background-color: rgba(30, 45, 75, 230);
+}
+#TextBubble[text_type="system"] #bubble_frame {
+    background-color: rgba(50, 50, 55, 200);
+}
+#TextBubble[text_type="transcript"] #bubble_frame {
+    background-color: rgba(30, 70, 110, 220);
+}
+
+#text-buble-role{
+    font-size: 16px;
+    font-weight: bold
+}
+#text-buble-content{
+    font-size: 14px;
+}
+#text-buble-time{
+    font-size: 12px;
+    color: rgba(255, 255, 255, 68%)
+}
+
+/*MEMORY PAGE AND BUBBLES*/
+#memory_page{
+    border-radius: 30px;
+    background-color: transparent;
+}
+
+#MemoryBubble{
+    background-color: rgba(67, 61, 239, 75%);
+    border-radius: 20px;
+    max-height: 90px;
+}
+#MemoryBubble[index="0"]{
+    background-color: rgba(17, 83, 226, 75%);
+    border-radius: 20px;
+}
+#MemoryBubble[index="1"]{
+    background-color: rgba(12, 88, 164, 75%);
+    border-radius: 20px;
+}
+#MemoryBubble[index="2"]{
+    background-color: rgba(12, 127, 160, 75%);
+    border-radius: 20px;
+}
+
+#MemoryBubble:hover{
+    background-color: rgba(126, 61, 239, 57%);
+    border-radius: 20px;
+    max-height: 90px;
+}
+
+#MemoryBubble QLineEdit:hover{
+    border-radius: 20px;
+    border-bottom: 2px solid #7C77F2;
+}
+
+#MemoryBubble QPushButton:hover{
+    background-color: rgba(255, 106, 106, 51%);
+}
+
+#memory-buble-time{
+    font-size: 12px;
+    color: rgba(255, 255, 255, 68%)
+}
+
+#new_memory_button{
+    background-color: #07714E;
+    border-radius: 20px;
+    max-height: 50px;
+    min-height: 50px;
+    margin-top: 50px;
+    max-width: 500px;
+    min-width: 500px
+}
+#new_memory_button:hover{
+    background-color: rgba(6, 113, 77, 43%);
+}
+
+
+/*SETTINGS*/
+#settings_page{
+    border-radius: 30px;
+    background-color: transparent;
+}
+
+#settings-title{
+    font-size: 16px;
+    font-weight: bold
+}
+#settings-line{
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,
+                             stop: 0.0 rgba(67, 61, 239, 0%),
+                             stop: 0.5 rgba(67, 61, 239, 100%),
+                             stop: 1.0 rgba(67, 61, 239, 0%));
+    min-height: 2px
+}

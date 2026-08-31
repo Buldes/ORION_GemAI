@@ -223,3 +223,6 @@ assets/json_files/chat_history.json
 assets/json_files/character.json
 run_in_cmd_console.bat
 simulation.py
+assets/json_files/character_gemini.json
+assets/json_files/character_ollama.json
+assets/gemini-versions

@@ -4,11 +4,11 @@ import sys
 import os
 import time
 import queue
-from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation, QObject, QUrl
+from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation, QObject, QUrl, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QButtonGroup, QLineEdit,
-    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit
+    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QRadioButton
 )
 from PySide6.QtGui import QFontDatabase, QFont, Qt
 from PySide6.QtMultimedia import QSoundEffect
@@ -17,6 +17,8 @@ import soundfile as sf
 import sounddevice as sd
 import numpy as np
 import keyboard
+from datetime import datetime
+from functools import wraps
 
 class HomeAnimation(QThread):
     angle_changed = Signal(list)
@@ -224,8 +226,8 @@ class OrionExecution(QThread):
                     time.sleep(2)
                     self.current_status.emit(7)
 
-                if "summary" in all_keys:
-                    self.save_chat_history_func(self.data["summary"])
+                if "content" in all_keys:
+                    self.save_chat_history_func(self.data["content"], "ai")
                     self.current_status.emit(4)
 
                 if "memory" in all_keys:
@@ -481,6 +483,185 @@ class GlobalHotkeyListener(QObject):
     def start_listening(self):
         keyboard.add_hotkey("F7", lambda: self.triggered.emit("F7"))
 
+class TextBubble(QWidget):
+    def __init__(self, text_data, parent=None):
+        super(TextBubble, self).__init__(parent)
+
+        self.setProperty("text_type", text_data["role"])
+        self.setObjectName("TextBubble")
+        self.setContentsMargins(0, 30, 0, 0)
+
+        row_layout = QHBoxLayout(self)
+
+        self.bubble_widget = QFrame(self)
+        self.bubble_widget.setObjectName("bubble_frame")
+        layout = QGridLayout(self.bubble_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # style based on role
+        if text_data["role"] == "user" or text_data["role"] == "transcript":
+            row_layout.addWidget(self.bubble_widget)
+            row_layout.addStretch()
+        elif text_data["role"] == "ai":
+            row_layout.addStretch()
+            row_layout.addWidget(self.bubble_widget)
+        else:
+            row_layout.addStretch()
+            row_layout.addWidget(self.bubble_widget)
+            row_layout.addStretch()
+
+        # add role text
+        text_by_role: dict = {
+            "user": "NUTZER",
+            "ai": "ORION",
+            "cmd": "TERMINAL-AUSGABE",
+            "cmd_script": "BEFEHL",
+            "search_result": "ONLINE-SUCHE",
+            "pythonCode": "CODE-AUSGABE",
+            "python_code_script": "SCRIPT",
+            "system": "SYSTEM",
+            "transcript": "TRANSKRIPIERT",
+        }
+        self.type_lable = QLabel(text_by_role.get(text_data["role"], "UNBEKANNT"))
+        self.type_lable.setAlignment(Qt.AlignCenter)
+        self.type_lable.setObjectName("text-buble-role")
+
+        # content
+        if text_data["role"] == "search_result":
+            # get data
+            all_data = text_data["content"][1]
+
+            # format results
+            all_res = []
+            for res in all_data["results"]:
+                url = res["url"].split("/")
+
+                all_res.append(
+f"""                Website: {url[2]}
+                Titel: {res['title']}
+                Score: {res['score']:.2f}
+""")
+
+            # format text
+            text_to_show = (f"Suche: {all_data['query']}\n"
+                            f"Ergebnisse:")
+            for res in all_res:
+                text_to_show += f"\n{res}"
+
+        else:
+            text_to_show = text_data["content"]
+
+        self.content_lable = QLabel(str(text_to_show))
+        self.content_lable.setObjectName("text-buble-content")
+
+        # time
+        time_text: str = text_data["time"]
+        time_text = time_text.replace("-", ".")
+        time_text = time_text[0: len(time_text) - 3]
+        self.time_lable = QLabel(time_text)
+        self.time_lable.setObjectName("text-buble-time")
+
+        layout.addWidget(self.type_lable)
+        layout.addWidget(self.content_lable)
+        layout.addWidget(self.time_lable)
+
+class MemoryBubble(QWidget):
+    content_chnage = Signal(str, int)
+
+    def __init__(self, text_data, index, parent=None):
+        super(MemoryBubble, self).__init__(parent)
+
+        self.setContentsMargins(0, 30, 0, 0)
+
+        self.frame_widget = QWidget(self)
+        self.frame_widget.setProperty("index", index % 4)
+        self.frame_widget.setObjectName("MemoryBubble")
+
+        v_layout = QVBoxLayout(self.frame_widget)
+
+        self.bubble_widget = QWidget(self)
+        self.bubble_widget.setObjectName("memory_bubble_frame")
+
+        h_layout = QHBoxLayout(self.bubble_widget)
+        h_layout.setContentsMargins(10, 10, 10, 10)
+
+        # add horizontal widget
+        v_layout.addWidget(self.bubble_widget)
+
+        # time lable
+        time_text: str = text_data["time"]
+        time_text = time_text.replace("-", ".")
+        time_text = time_text[0: len(time_text) - 3]
+        self.time_lable = QLabel(time_text)
+        self.time_lable.setObjectName("memory-buble-time")
+        v_layout.addWidget(self.time_lable)
+
+        # add content
+        self.content_input = QLineEdit(self)
+        self.content_input.setText(text_data["content"])
+        self.content_input.editingFinished.connect(lambda : self.content_chnage.emit(self.content_input.text(), index))
+        h_layout.addWidget(self.content_input)
+
+        # add delete button
+        delete_button = QPushButton(" Löschen ")
+        delete_button.clicked.connect(lambda : self.content_chnage.emit("delete", index))
+        h_layout.addWidget(delete_button)
+
+        # add to main
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(self.frame_widget)
+
+class SettingsCategorie(QWidget):
+    def __init__(self, title, max_colums = 2, parent=None):
+        super(SettingsCategorie, self).__init__(parent)
+
+        self.layout = QGridLayout(self)
+
+        title_lable = QLabel(title)
+        title_lable.setObjectName("settings-title")
+        title_lable.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(title_lable, 0, 0, 1, max_colums)
+
+        line = QFrame(self)
+        line.setObjectName("settings-line")
+        self.layout.addWidget(line, 1, 0, 1, max_colums)
+
+
+    def add_new_widget(self, widget, row, column, rowSpan = 1, columnSpan = 1):
+        self.layout.addWidget(widget, row + 2, column, rowSpan, columnSpan)
+
+class SettingsDropDown(QWidget):
+    item_selected = Signal(str)
+    def __init__(self, title, options, parent=None):
+        super(SettingsDropDown, self).__init__(parent)
+
+        self.main_layout = QHBoxLayout(self)
+
+        title_lable = QLabel(title)
+        title_lable.setObjectName("drop-down-title")
+        self.main_layout.addWidget(title_lable)
+
+        self.drop_down_menu = QComboBox(self)
+        self.drop_down_menu.addItems(options)
+        self.drop_down_menu.currentTextChanged.connect(self.item_selected)
+        self.main_layout.addWidget(self.drop_down_menu)
+
+    def select_option(self, option):
+        self.drop_down_menu.setCurrentText(option)
+
+def has_something_changed(func):
+    @wraps(func)
+    def inner(self, *args, **kwargs):
+        self.change_detected = True
+
+        res =  func(self, *args, **kwargs)
+
+        self.update_settings()
+
+        return res
+
+    return inner
+
 class MainWindow(QMainWindow):
 
     orion_input = Signal(str, str)
@@ -488,7 +669,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self, tts_func, ai_response_func, py_execution_func, cmd_execution_func, online_serach_func,
                  save_chat_history_func, save_memory_func, send_multiple_messages_func, record_audio_func,
-                 transcript_audio_func, predict_activation_word_func):
+                 transcript_audio_func, predict_activation_word_func, get_current_chat_history, get_current_memory,
+                 save_edited_memory_func):
         # <editor-fold desc="GENEREL">
         super().__init__()
         self.toast_fade_in = None
@@ -528,8 +710,11 @@ class MainWindow(QMainWindow):
         self.record_audio_func = record_audio_func
         self.transcript_audio_func = transcript_audio_func
         self.predict_activation_word_func = predict_activation_word_func
-        # </editor-fold>
 
+        self.get_current_chat_history = get_current_chat_history
+        self.get_current_memory = get_current_memory
+        self.save_edited_memory_func = save_edited_memory_func
+        # </editor-fold>
 
         # <editor-fold desc="UI SOUND FX">
         # UI Sounds
@@ -542,12 +727,26 @@ class MainWindow(QMainWindow):
 
         # </editor-fold>
 
+        # <editor-fold desc="PAGES">
         # home page
         self.orion_info_label: QLabel = QLabel(self)
         self.orion_info_label.setText("Lade...")
         self.orion_info_label.setAlignment(Qt.AlignCenter)
 
         self.orion_control_element = None
+
+        # history page
+        self.all_text_bubbles = []
+
+        # memory page
+        self.all_memory_bubbles = []
+        self.all_memorys: list = []
+        # </editor-fold>
+
+        # <editor-fold desc="SETTINGS (AND PAGE)">
+        # all related to settings and settings page
+        self.change_detected = False
+        # </editor-fold>
 
         # <editor-fold desc="LAYOUT AND TABS">
         # layout
@@ -563,8 +762,8 @@ class MainWindow(QMainWindow):
 
         # create all widgets
         self.page_home, self.page_home_conical_layer, self.page_home_radial_layer = self.create_page_home()
-        self.page_history = self.create_page_history()
-        self.page_memory = self.create_page_memory()
+        self.page_history, self.page_history_widget, self.page_history_layout = self.create_page_history()
+        self.page_memory, self.page_memory_layout = self.create_page_memory()
         self.page_settings = self.create_page_settings()
 
 
@@ -573,6 +772,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.page_history)
         self.stack.addWidget(self.page_memory)
         self.stack.addWidget(self.page_settings)
+
+        self.stack.setCurrentIndex(3)
         # </editor-fold>
 
         # <editor-fold desc="TAB BAR">
@@ -666,9 +867,18 @@ class MainWindow(QMainWindow):
         self.ui_current_status.connect(self.on_status_changed)
         # </editor-fold>
 
+        # reload so no bugs happen
+        self.update_memory_entrys(init=False)
+        self.update_history_bubbles(init=False)
+
         # say helo
         self.active_on_status(-1)
         self.orion_input.emit("Begrüße den Nutzer basierend auf deinen Informationen.", "system")
+
+    """GENRELL"""
+
+    def get_current_timestamp(self):
+        return datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
     def apply_style(self):
         with open(rf"{self.working_dir}/assets/gui/theme/{self.selected_style}.qss", "r") as f:
@@ -754,31 +964,129 @@ class MainWindow(QMainWindow):
         return main_widget, layer1_conical, layer2_radial
 
     def create_page_history(self):
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+
         page = QWidget()
         page.setObjectName("history_page")
+        layout = QVBoxLayout(page)
 
-        layout = QGridLayout(page)
-        layout.addWidget(QLabel("Historie"))
+        # add all bubbles
+        self.update_history_bubbles(init=True)
 
-        return page
+        for chat_buble in self.all_text_bubbles:
+            layout.addWidget(chat_buble)
+
+        # scroll area add and scroll down
+        scroll_area.setWidget(page)
+        scroll_area.verticalScrollBar().setValue(
+            scroll_area.verticalScrollBar().maximum()
+        )
+
+        return scroll_area, page, layout
+
+    def update_history_bubbles(self, init=False):
+        if not init:
+            for item in self.all_text_bubbles:
+                self.page_history_layout.removeWidget(item)
+                item.deleteLater()
+
+        self.all_text_bubbles = []
+
+        for chat_item in self.get_current_chat_history():
+            new_item = TextBubble(chat_item, self)
+            self.all_text_bubbles.append(new_item)
+            if not init:
+                self.page_history_layout.addWidget(new_item)
 
     def create_page_memory(self):
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+
         page = QWidget()
         page.setObjectName("memory_page")
+        layout = QVBoxLayout(page)
 
-        layout = QGridLayout(page)
-        layout.addWidget(QLabel("Erinnerungen"))
+        # add all memory bubble
+        self.update_memory_entrys(init=True)
+        for item in self.all_memory_bubbles:
+            layout.addWidget(item)
 
-        return page
+        # set widget and scroll
+        scroll_area.setWidget(page)
+        scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
+
+        return scroll_area, layout
+
+    def update_memory_entrys(self, init=False):
+        if not init:
+            for item in self.all_memory_bubbles:
+                self.page_memory_layout.removeWidget(item)
+                item.deleteLater()
+
+        self.all_memory_bubbles = []
+        self.all_memorys = self.get_current_memory()
+
+        for index, memory_item in enumerate(self.all_memorys):
+            new_item = MemoryBubble(memory_item, index, self)
+            new_item.content_chnage.connect(self.edit_memorys)
+            self.all_memory_bubbles.append(new_item)
+
+
+            if not init:
+                self.page_memory_layout.addWidget(new_item)
+
+        # add new memory button
+        new_item = QPushButton("Neue Erinnerung erstellen", self)
+        new_item.clicked.connect(lambda : self.edit_memorys("add_new", -1))
+        new_item.setObjectName("new_memory_button")
+
+        self.all_memory_bubbles.append(new_item)
+        if not init:
+            self.page_memory_layout.addWidget(new_item, alignment=Qt.AlignHCenter)
 
     def create_page_settings(self):
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+
         page = QWidget()
         page.setObjectName("settings_page")
+        layout = QVBoxLayout(page)
 
-        layout = QGridLayout(page)
-        layout.addWidget(QLabel("Einstellungen"))
+        # <editor-fold desc="AI PROVIDER">
+        # AI PROVIDER
+        ai_type_categorie = SettingsCategorie("KI Anbieter und Prompt", max_colums=4)
 
-        return page
+        ai_provider = SettingsDropDown("KI Anbieter:", ["Gemini (Cloud)", "Ollama (lokal)"])
+        ollama_version = SettingsDropDown("Ollama Version:", ["llama3.1:latest", "llama3.2:latest"])
+        gemini_version = SettingsDropDown("Gemini Version:", ["gemini-3.7-flash", "gemini-3.6-flash",
+                                                              "gemini-3.5-flash", "gemini-3.5-flash-lite"])
+
+        # set default
+        if self.orion_setting["llm_provider"] == "gemini":
+            ai_provider.select_option("Gemini (Cloud)")
+            gemini_version.select_option(self.orion_setting["llm_version"])
+        else:
+            ai_provider.select_option("Ollama (lokal)")
+            ollama_version.select_option(self.orion_setting["llm_version"])
+
+        # connect to function
+        ai_provider.item_selected.connect(self.change_ai_provider)
+        ollama_version.item_selected.connect(self.change_llm_modell)
+        gemini_version.item_selected.connect(self.change_llm_modell)
+
+        ai_type_categorie.add_new_widget(ai_provider, 0, 0, 2, 2)
+        ai_type_categorie.add_new_widget(ollama_version, 0, 2, 1, 2)
+        ai_type_categorie.add_new_widget(gemini_version, 1, 2, 1, 2)
+
+        layout.addWidget(ai_type_categorie)
+        # </editor-fold>
+
+        layout.addStretch()
+        scroll_area.setWidget(page)
+
+        return scroll_area
 
     """ANIMATION SINGNALS"""
 
@@ -820,11 +1128,18 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event, /):
         super().resizeEvent(event)
-
+        w, h = self.width(), self.height()
         # resize main page circle
         min_side = min(self.width(), self.height()) * 0.8
         self.page_home_conical_layer.setFixedSize(int(min_side), int(min_side))
         self.page_home_radial_layer.setFixedSize(int(min_side), int(min_side))
+
+        # history page
+        self.page_history_widget.setMaximumWidth(int(w - 52))
+
+        for element in self.all_text_bubbles:
+            element.bubble_widget.setMaximumWidth(int(w - 52 - 300))
+            element.bubble_widget.setMinimumWidth(500)
 
     """Inputs"""
 
@@ -1001,6 +1316,23 @@ class MainWindow(QMainWindow):
     def play_sound(self, sound_name):
         self.ui_sounds[sound_name].play()
 
+    # edit memory
+
+    def edit_memorys(self, new_data, index):
+        if new_data == "delete":
+            self.all_memorys.pop(index)
+        elif new_data == "add_new" and index == -1:
+            self.all_memorys.append({
+                "time":self.get_current_timestamp(),
+                "content": ""
+            })
+        else:
+            self.all_memorys[index]["content"] = new_data
+
+        self.save_edited_memory_func(self.all_memorys)
+        self.update_memory_entrys(init=False)
+
+
     """STATIC FUNCTIONS"""
 
     def wav_to_rms(self, wav_data, fs):
@@ -1081,6 +1413,19 @@ class MainWindow(QMainWindow):
         fade_out_delay = max(100, duration_ms - 500)
         QTimer.singleShot(fade_out_delay, fade_out_animation)
 
+    """SETTING CHANGE (EVENT ON SIGNAL)"""
+
+    def update_settings(self):
+        pass
+
+    @has_something_changed
+    def change_ai_provider(self, new_provider):
+        print(new_provider)
+
+    @has_something_changed
+    def change_llm_modell(self, new_modell):
+        print(new_modell)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
@@ -1095,6 +1440,22 @@ if __name__ == "__main__":
         data, fs = sf.read(rf"./assets/gui/test.wav")
         return data, fs
 
+    def get_history():
+        with open("./assets/json_files/chat_history.json", "r", encoding="utf-8") as history_file:
+            data = json.load(history_file)
+        return data
+
+    def get_memory():
+        with open("./assets/json_files/memory.json", "r", encoding="utf-8") as mem_file:
+            data = json.load(mem_file)
+        return data
+
+    def save_edited_memory(edited_memory):
+        print("Saving edited memory")
+
+        with open("./assets/json_files/memory.json", "w", encoding="utf-8") as mem_file:
+            json.dump(edited_memory, mem_file, ensure_ascii=False, indent=4)
+
     window = MainWindow(
         tts_func=tts_res,
         ai_response_func=ai_res,
@@ -1107,6 +1468,9 @@ if __name__ == "__main__":
         record_audio_func=lambda *args: "No Func",
         transcript_audio_func=lambda *args, audio_data: "No func",
         predict_activation_word_func=lambda *args: False,
+        get_current_chat_history=get_history,
+        get_current_memory=get_memory,
+        save_edited_memory_func=save_edited_memory
     )
     window.showMaximized()
 

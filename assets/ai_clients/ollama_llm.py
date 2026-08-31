@@ -133,8 +133,8 @@ class ollama_client:
                 ],
                 format=AgentOutput.model_json_schema(),
                 options={
-                    "temperature": 0.1,
-                    "num_ctx": 4096
+                    "temperature": self.orion_settings["ai_temperature"],
+                    # "num_ctx": 4096
                 }
             )
             json_data = json.loads(response.message.content)
