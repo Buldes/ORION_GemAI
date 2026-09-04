@@ -247,12 +247,13 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 /*SETTINGS*/
 #settings_page{
     border-radius: 30px;
-    background-color: transparent;
+    background-color: transparent
 }
 
 #settings-title{
     font-size: 16px;
-    font-weight: bold
+    font-weight: bold;
+    padding-top: 30px
 }
 #settings-line{
     background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,
@@ -260,4 +261,61 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                              stop: 0.5 rgba(67, 61, 239, 100%),
                              stop: 1.0 rgba(67, 61, 239, 0%));
     min-height: 2px
+}
+
+QCheckBox {
+    padding-left: 50px;
+    padding-right: 20px;
+    padding-top: 20px;
+
+    spacing: 20px;
+}
+
+
+/*-----WINDOWS-----*/
+
+/*VOLUME TEST*/
+#volume-bar {
+   border: 2px solid #2d2d2d;
+   border-radius: 5px;
+   background-color: #1a1a1a;
+   width: 18px;
+}
+#volume-bar::chunk {
+    background: #7C77F2;
+    border-radius: 3px;
+}
+#score-bar{
+   border: 2px solid #2d2d2d;
+   border-radius: 5px;
+   background-color: #1a1a1a;
+   width: 18px;
+}
+#score-bar::chunk {
+    background: #2562B9;
+    border-radius: 3px;
+}
+
+#volume-label{
+    background-color: red
+}
+
+#volume-test QLabel{
+    max-height: 20px
+}
+#volume-test QPushButton{
+    min-height: 20px
+}
+
+#apply-button{
+    background-color: #1E7F1C
+}
+#apply-button:hover{
+    background-color: rgba(29, 127, 27, 50%)
+}
+#exit-button{
+    background-color: #7C1111
+}
+#exit-button:hover{
+    background-color: rgba(124, 16, 16, 50%)
 }

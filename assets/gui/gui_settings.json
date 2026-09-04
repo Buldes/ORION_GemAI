@@ -1,5 +1,17 @@
 {
-  "push-to-talk": "F7",
-  "ui_sounds": 1,
-  "orion_volume": 0.5
+    "push-to-talk": "F4",
+    "ui_sounds": 2.0,
+    "orion_volume": 0.18,
+    "voice_test_sentences": [
+        "Systemdiagnose gestartet: Dies ist ein ausführlicher Sprachtest, um die Tonhöhe, Satzmelodie und Verständlichkeit der TTS-Synthese von ORION optimal zu kalibrieren.",
+        "Wir prüfen jetzt die Sprachausgabe von ORION, damit sichergestellt ist, dass die generierten Audiodaten flüssig, ohne Verzögerungen und in hervorragender Klangqualität wiedergegeben werden.",
+        "Als dein lokaler KI-Assistent ORION passe ich meine Stimme in diesem Testlauf exakt an, um sowohl informative Erklärungen als auch sarkastische Bemerkungen perfekt zu betonen.",
+        "Dieser Testsatz dient dazu, das Zusammenspiel zwischen Mikrofoneingang und Sprachausgabe zu analysieren und ungewolltes Rückkoppeln oder Geister-Trigger zu vermeiden.",
+        "Während dieser Audioschleife verarbeitet das System komplexe Satzstrukturen und Kommata, damit meine Reaktionen in echten Gesprächen wie eine natürliche menschliche Konversation klingen.",
+        "Zur Feinabstimmung der Dynamik und Pegelspitzen passe ich meine Ausgabe jetzt variabel an – von leisen Hintergrundbenachrichtigungen bis hin zu deutlichen Systemwarnungen.",
+        "Sobald du diesen Stimmentest erfolgreich abgeschlossen hast, bin ich wieder bereit, deine Befehle entgegenzunehmen, Skripte auszuführen und deine Aufgaben zu strukturieren.",
+        "Hallo, mein Name ist ORION, und dieser Test stellt sicher, dass auch schwierige Konsonantenkombinationen sowie lange verschachtelte Sätze absolut verständlich artikuliert werden.",
+        "Egal ob lokale Offline-Verarbeitung oder komplexe Aufgaben – die Audio-Engine von ORION läuft stabil und liefert dir jederzeit eine klare akustische Rückmeldung.",
+        "Sprachtest erfolgreich abgeschlossen: Sämtliche Parameter für die TTS-Ausgabe sind nun optimal eingestellt und ORION steht dir voll einsatzbereit zur Verfügung."
+    ]
 }

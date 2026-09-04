@@ -1,39 +1,69 @@
 {
-  "llm_provider": "gemini",
-  "llm_version": "gemini-3.5-flash",
-  "ai_temperature": 0.9,
-
-  "send_history": false,
-
-  "allow_python_execution": true,
-  "auto_python_execution": false,
-  "python_timeout": 60,
-
-  "use_stt": false,
-  "oww_settings": {"InitialSilenceTimeout":10, "SilenceTimeout":2, "threshold":50, "score_threshold":  0.4},
-  "activation_sound": true,
-  "active_words": ["Ja?", "Yo!", "Ich höre.", "Yup!", "Was gibt es?", "Hmm?", "Bin da!", "Schieß los!", "Bin ganz Ohr!", "Was geht?", "Ja, bitte?", "Bereit.", "Ich lausche.", "ORION hört!", "Anwesend.", "Wie kann ich helfen?"],
-  "speaking_recognition_mode": "manually",
-
-  "whisper_model": "turbo",
-
-  "use_tts": true,
-  "tts_voice": "M1",
-  "tts_settings": {"speed": 1.2, "total_steps": 16},
-
-  "tts_and_stt_device": "gpu",
-
-  "allow_tavily_search": true,
-  "tavily_settings": {"search_depth":"advanced", "max_results":"3", "exclude_domains": ["bild.de"], "topic":"general", "time_range":"month", "auto_parameters":true},
-
-  "allow_cmd_execution": true,
-  "auto_cmd_execution": false,
-  "cmd_blacklist": ["format ", "rmdir /s /q c:", "del /f /s /q c:\\windows"],
-  "cmd_timeout": 20,
-
-  "cuda_dir": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin",
-
-  "added_ai_role": "",
-
-  "execute_interface": "gui"
+    "llm_provider": "ollama",
+    "llm_version": "llama3.1:latest",
+    "ai_temperature": 0.5,
+    "send_history": false,
+    "send_memory": true,
+    "history_max_items": 100,
+    "memory_max_items": 300,
+    "allow_python_execution": true,
+    "auto_python_execution": false,
+    "python_timeout": 60,
+    "use_stt": true,
+    "oww_settings": {
+        "InitialSilenceTimeout": 10,
+        "SilenceTimeout": 2.0,
+        "threshold": 2153,
+        "score_threshold": 0.41
+    },
+    "activation_sound": true,
+    "active_words": [
+        "Ja?",
+        "Yo!",
+        "Ich höre.",
+        "Yup!",
+        "Was gibt es?",
+        "Hmm?",
+        "Bin da!",
+        "Schieß los!",
+        "Bin ganz Ohr!",
+        "Was geht?",
+        "Ja, bitte?",
+        "Bereit.",
+        "Ich lausche.",
+        "ORION hört!",
+        "Anwesend.",
+        "Wie kann ich helfen?"
+    ],
+    "speaking_recognition_mode": "voice",
+    "whisper_model": "turbo",
+    "use_tts": true,
+    "tts_voice": "M4",
+    "tts_settings": {
+        "speed": 1.2,
+        "total_steps": 16
+    },
+    "tts_and_stt_device": "gpu",
+    "allow_tavily_search": true,
+    "tavily_settings": {
+        "search_depth": "advanced",
+        "max_results": "3",
+        "exclude_domains": [
+            "bild.de"
+        ],
+        "topic": "general",
+        "time_range": "month",
+        "auto_parameters": true
+    },
+    "allow_cmd_execution": true,
+    "auto_cmd_execution": false,
+    "cmd_blacklist": [
+        "format",
+        "rmdir /s /q c:",
+        "del /f /s /q c:\\windows"
+    ],
+    "cmd_timeout": 60,
+    "cuda_dir": "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin",
+    "added_ai_role": "",
+    "execute_interface": "gui"
 }

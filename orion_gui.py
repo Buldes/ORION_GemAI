@@ -8,9 +8,10 @@ from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnima
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QButtonGroup, QLineEdit,
-    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QRadioButton
+    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QRadioButton, QCheckBox,
+    QSlider, QTextEdit, QDialog, QProgressBar
 )
-from PySide6.QtGui import QFontDatabase, QFont, Qt
+from PySide6.QtGui import QFontDatabase, QFont, Qt, QFontMetrics, QKeySequence
 from PySide6.QtMultimedia import QSoundEffect
 import json
 import soundfile as sf
@@ -19,6 +20,7 @@ import numpy as np
 import keyboard
 from datetime import datetime
 from functools import wraps
+
 
 class HomeAnimation(QThread):
     angle_changed = Signal(list)
@@ -161,7 +163,7 @@ class OrionWorkflow(QThread):
                 # tts
                 self.current_status.emit(2)
                 self.play_sound.emit("orion_finished")
-                self.tts_response = self.tts(self.ai_response["content"])
+                self.tts_response = self.tts(self.ai_response["content"], specific_voice_style="")
 
                 # send data back
                 self.final_response.emit(self.ai_response, self.tts_response[0], self.tts_response[1])
@@ -227,7 +229,8 @@ class OrionExecution(QThread):
                     self.current_status.emit(7)
 
                 if "content" in all_keys:
-                    self.save_chat_history_func(self.data["content"], "ai")
+                    if not "no_safe" in all_keys:
+                        self.save_chat_history_func(self.data["content"], "ai")
                     self.current_status.emit(4)
 
                 if "memory" in all_keys:
@@ -339,12 +342,41 @@ class SpeachToText(QThread):
         self.last_record_end_time = 0
         self.ui_current_status = 0
         self.has_already_happened = False
+
+        self.send_rms_values = False
+        self.rms_bus = lambda x: x
+        self.send_score_values = False
+        self.score_bus = lambda x: x
     
     def run(self):
         
         with sd.InputStream(samplerate=16000, channels=1, blocksize=1280, dtype='int16', callback=self.audio_callback):
 
             while self._is_running:
+
+
+                if self.send_rms_values:
+                    try:
+                        chunk = self.stt_audio_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    rms = np.sqrt(np.mean(chunk.astype(np.float32) ** 2))
+                    self.rms_bus(rms)
+                    continue
+
+                elif self.send_score_values:
+                    try:
+                        audio_chunk = self.stt_audio_queue.get(timeout=0.1)
+                        _, score = self.predict_activation_word_func(audio_chunk)
+                    except queue.Empty:
+                        continue
+
+                    self.score_bus(score)
+
+                    with self.stt_audio_queue.mutex:
+                        self.stt_audio_queue.queue.clear()
+
+                    continue
 
                 if self.ui_current_status != 0:
                     time.sleep(0.01)
@@ -389,7 +421,7 @@ class SpeachToText(QThread):
                     elif self.listening_mode == "voice":
                         try:
                             audio_chunk = self.stt_audio_queue.get(timeout=0.1)
-                            prediction = self.predict_activation_word_func(audio_chunk)
+                            prediction, score = self.predict_activation_word_func(audio_chunk)
 
                             if time.time() - self.last_record_end_time < 2:
                                 with self.stt_audio_queue.mutex:
@@ -477,6 +509,14 @@ class SpeachToText(QThread):
 
         return audio_flatten
 
+    def send_rms_to_volume_test(self, is_true, func = lambda x: x):
+        self.send_rms_values = is_true
+        self.rms_bus = func
+
+    def send_score_to_test(self, is_true, func = lambda x: x):
+        self.send_score_values = is_true
+        self.score_bus = func
+
 class GlobalHotkeyListener(QObject):
     triggered = Signal(str)
 
@@ -523,7 +563,7 @@ class TextBubble(QWidget):
             "transcript": "TRANSKRIPIERT",
         }
         self.type_lable = QLabel(text_by_role.get(text_data["role"], "UNBEKANNT"))
-        self.type_lable.setAlignment(Qt.AlignCenter)
+        self.type_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.type_lable.setObjectName("text-buble-role")
 
         # content
@@ -612,26 +652,27 @@ class MemoryBubble(QWidget):
         main_layout.addWidget(self.frame_widget)
 
 class SettingsCategorie(QWidget):
-    def __init__(self, title, max_colums = 2, parent=None):
+    def __init__(self, title: str, max_colums: int = 2, parent=None):
         super(SettingsCategorie, self).__init__(parent)
 
         self.layout = QGridLayout(self)
 
-        title_lable = QLabel(title)
+        title_lable = QLabel(title.upper())
         title_lable.setObjectName("settings-title")
-        title_lable.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(title_lable, 0, 0, 1, max_colums)
+        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(title_lable, 0, 0, 1, max_colums + 2)
 
         line = QFrame(self)
         line.setObjectName("settings-line")
-        self.layout.addWidget(line, 1, 0, 1, max_colums)
+        self.layout.addWidget(line, 1, 0, 1, max_colums + 2)
 
 
     def add_new_widget(self, widget, row, column, rowSpan = 1, columnSpan = 1):
-        self.layout.addWidget(widget, row + 2, column, rowSpan, columnSpan)
+        self.layout.addWidget(widget, row + 2, column + 1, rowSpan, columnSpan)
 
 class SettingsDropDown(QWidget):
     item_selected = Signal(str)
+    index_selected = Signal(int)
     def __init__(self, title, options, parent=None):
         super(SettingsDropDown, self).__init__(parent)
 
@@ -644,10 +685,246 @@ class SettingsDropDown(QWidget):
         self.drop_down_menu = QComboBox(self)
         self.drop_down_menu.addItems(options)
         self.drop_down_menu.currentTextChanged.connect(self.item_selected)
+        self.drop_down_menu.currentIndexChanged.connect(self.index_selected)
         self.main_layout.addWidget(self.drop_down_menu)
 
     def select_option(self, option):
         self.drop_down_menu.setCurrentText(option)
+
+class SettingsSlider(QWidget):
+    slider_value_changed = Signal(int)
+
+    def __init__(self, title, min_value, max_value, unit="", fixed_title_with: int = 220, toolTip: str = "", parent=None,
+                 step_size: int = 1):
+        super(SettingsSlider, self).__init__(parent)
+        self.unit = unit
+        self.step_size = step_size
+        self.min_value = min_value
+
+        self.setToolTip(toolTip)
+        layout = QHBoxLayout(self)
+
+        # title
+        title_lable = QLabel(title)
+        title_lable.setFixedWidth(fixed_title_with)
+        layout.addWidget(title_lable)
+
+        # slider
+        self.slider = QSlider(Qt.Horizontal, self)
+
+        self.slider.setMaximum(max_value)
+        self.slider.setMinimum(min_value)
+        self.slider.setMinimumWidth(50)
+        self.slider.setTickInterval(100)
+
+        self.slider.sliderReleased.connect(lambda : self.slider_value_changed.emit(self.slider.value()))
+        self.slider.valueChanged.connect(self.on_value_chnage_slider)
+
+        layout.addWidget(self.slider)
+
+        # current value lable
+        max_text = f"{max_value} {self.unit}"
+        min_text = f"{min_value} {self.unit}"
+        longest_text = max_text if len(max_text) >= len(min_text) else min_text
+
+        self.slider_lable = QLabel(self)
+        self.slider_lable.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        metrics = QFontMetrics(self.slider_lable.font())
+        required_width = metrics.horizontalAdvance(longest_text) + 8
+        self.slider_lable.setFixedWidth(required_width)
+
+        layout.addWidget(self.slider_lable)
+
+        self.set_curent_value(min_value)
+
+    def set_curent_value(self, value):
+        self.slider.setValue(value)
+        self.slider_lable.setText(str(int(value)) + self.unit)
+
+    def on_value_chnage_slider(self, value):
+        snapped_value = round(value / self.step_size) * self.step_size
+        snapped_value = max(snapped_value, self.min_value)
+
+        self.set_curent_value(snapped_value)
+
+class VolumeTest(QDialog):
+
+    apply_new_volume = Signal(int)
+
+    def __init__(self, parent):
+        super(VolumeTest, self).__init__(parent)
+
+        self.setWindowTitle("Lautstärke Test")
+        self.setFixedSize(300, 180)
+        self.setObjectName("volume-test")
+
+        self.max_value = 0
+
+        layout = QGridLayout(self)
+
+        # left side: max value, set value, exit
+
+        self.max_value_lable = QLabel("---")
+        self.max_value_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title_lable = QLabel("Maximaler Wert")
+        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(title_lable, 0, 0, 1, 1)
+        layout.addWidget(self.max_value_lable, 1, 0, 1, 1)
+
+        apply_button = QPushButton("Wert übernehmen")
+        apply_button.setObjectName("apply-button")
+        apply_button.clicked.connect(lambda : self.apply_new_volume.emit(self.max_value))
+        self.apply_new_volume.connect(self.close)
+
+        exit_button = QPushButton("Abbrechen")
+        exit_button.setObjectName("exit-button")
+        exit_button.clicked.connect(self.close)
+
+        layout.addWidget(apply_button, 2, 0, 1, 1)
+        layout.addWidget(exit_button, 3, 0, 1, 1)
+
+        # right side: current volume
+        self.volume_lable = QLabel(str(self.max_value))
+        self.volume_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.volume_lable, 3, 1, 1, 1)
+
+        self.volume_bar = QProgressBar(self)
+        self.volume_bar.setObjectName("volume-bar")
+        self.volume_bar.setOrientation(Qt.Orientation.Vertical)
+        self.volume_bar.setRange(0, self.max_value)
+        self.volume_bar.setTextVisible(False)
+        self.volume_bar.setFixedWidth(50)
+
+        layout.addWidget(self.volume_bar, 0, 1, 3, 1)
+
+    def recv_rms(self, rms_value):
+        rms_value_int = int(rms_value)
+
+        self.volume_bar.setValue(rms_value_int)
+        self.volume_lable.setText(str(int(rms_value_int)))
+
+        self.max_value = max(self.max_value, rms_value_int)
+        self.volume_bar.setRange(0, self.max_value)
+
+        self.max_value_lable.setText(f"{self.max_value}")
+
+class ScoreTest(QDialog):
+    apply_new_score = Signal(int)
+    def __init__(self, parent):
+        super(ScoreTest, self).__init__(parent)
+
+        self.setWindowTitle("Score Test")
+        self.setFixedSize(300, 180)
+        self.setObjectName("score-test")
+
+        self.max_value = 0
+
+        layout = QGridLayout(self)
+
+        # left side
+        self.max_score_lable = QLabel("-")
+        self.max_score_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title_lable = QLabel("Maximaler Wert")
+        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(title_lable, 0, 0, 1, 1)
+        layout.addWidget(self.max_score_lable, 1, 0, 1, 1)
+
+        apply_button = QPushButton("Wert übernehmen")
+        apply_button.setObjectName("apply-button")
+        apply_button.clicked.connect(lambda: self.apply_new_score.emit(self.max_value))
+        self.apply_new_score.connect(self.close)
+
+        exit_button = QPushButton("Abbrechen")
+        exit_button.setObjectName("exit-button")
+        exit_button.clicked.connect(self.close)
+
+        layout.addWidget(apply_button, 2, 0, 1, 1)
+        layout.addWidget(exit_button, 3, 0, 1, 1)
+
+        # right side
+        self.score_bar = QProgressBar(self)
+        self.score_bar.setObjectName("score-bar")
+        self.score_bar.setOrientation(Qt.Orientation.Vertical)
+        self.score_bar.setRange(0, 100)
+        self.score_bar.setTextVisible(False)
+        self.score_bar.setFixedWidth(50)
+
+        self.score_bar_lable = QLabel(self)
+        self.score_bar_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(self.score_bar, 0, 1, 3, 1)
+        layout.addWidget(self.score_bar_lable, 3, 1, 1, 1)
+
+
+    def recv_score(self, score_value):
+        score_value_int = int(score_value * 100)
+
+        self.score_bar.setValue(score_value_int)
+        self.score_bar_lable.setText(str(score_value_int) + "%")
+
+        self.max_value = max(self.max_value, score_value_int)
+        self.max_score_lable.setText(str(self.max_value) + "%")
+
+class HotKeyButton(QPushButton):
+    hotkey_changed = Signal(str)
+
+    def __init__(self, parent, current, added_text: str = ""):
+        super(HotKeyButton, self).__init__(parent)
+
+        self.setText(f"Hotkey {added_text}-{current}-")
+
+        self.added_text = added_text
+        self.current_hotkey = current
+        self.is_recording = False
+
+        self.clicked.connect(self.start_recording)
+
+    def start_recording(self):
+        self.is_recording = True
+        self.setText("Taste drücken...")
+        self.setFocus()
+
+    def keyPressEvent(self, event):
+        if not self.is_recording:
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+
+        if key == Qt.Key.Key_Escape:
+            self.stop_recording(self.current_hotkey)
+            return
+
+        if key in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
+            return
+
+        modifiers = event.modifiers()
+
+        key_sequence = QKeySequence(event.keyCombination())
+        new_hotkey = key_sequence.toString(QKeySequence.NativeText)
+
+        self.stop_recording(new_hotkey)
+
+    def stop_recording(self, hotkey_str):
+        self.is_recording = False
+        self.current_hotkey = hotkey_str
+
+        self.setText(f"Hotkey {self.added_text}-{hotkey_str}-")
+        self.hotkey_changed.emit(self.current_hotkey)
+
+    def focusOutEvent(self, event):
+        # Falls der Nutzer woanders hinklickt, Aufzeichnung abbrechen
+        if self.is_recording:
+            self.stop_recording(self.current_hotkey)
+        super().focusOutEvent(event)
+
+    def set_hotkey(self, hotkey_str):
+        self.current_hotkey = hotkey_str
+        self.setText(f"Hotkey {self.added_text}-{hotkey_str}-")
 
 def has_something_changed(func):
     @wraps(func)
@@ -670,13 +947,14 @@ class MainWindow(QMainWindow):
     def __init__(self, tts_func, ai_response_func, py_execution_func, cmd_execution_func, online_serach_func,
                  save_chat_history_func, save_memory_func, send_multiple_messages_func, record_audio_func,
                  transcript_audio_func, predict_activation_word_func, get_current_chat_history, get_current_memory,
-                 save_edited_memory_func):
+                 save_edited_memory_func, save_new_settings_func):
         # <editor-fold desc="GENEREL">
         super().__init__()
         self.toast_fade_in = None
         self._active_toast = None
+        self.all_microphones = self.get_input_devices()
+
         self.setWindowTitle("ORION GemAI")
-        self.resize(1200, 800)
 
         # style and path
         self.selected_style = "dark_blue"
@@ -688,9 +966,9 @@ class MainWindow(QMainWindow):
         self.orion_setting_file: str = rf"{self.working_dir}/assets/settings.json"
         self.gui_settings_file: str = rf"{self.working_dir}/assets/gui/gui_settings.json"
 
-        with open(self.orion_setting_file, "r") as file:
+        with open(self.orion_setting_file, "r", encoding="utf-8") as file:
             self.orion_setting = json.load(file)
-        with open(self.gui_settings_file, "r") as file:
+        with open(self.gui_settings_file, "r", encoding="utf-8") as file:
             self.gui_setting = json.load(file)
 
         self.ui_sound_volume = self.gui_setting["ui_sounds"]
@@ -714,6 +992,7 @@ class MainWindow(QMainWindow):
         self.get_current_chat_history = get_current_chat_history
         self.get_current_memory = get_current_memory
         self.save_edited_memory_func = save_edited_memory_func
+        self.save_new_settings_func = save_new_settings_func
         # </editor-fold>
 
         # <editor-fold desc="UI SOUND FX">
@@ -731,7 +1010,7 @@ class MainWindow(QMainWindow):
         # home page
         self.orion_info_label: QLabel = QLabel(self)
         self.orion_info_label.setText("Lade...")
-        self.orion_info_label.setAlignment(Qt.AlignCenter)
+        self.orion_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.orion_control_element = None
 
@@ -745,6 +1024,26 @@ class MainWindow(QMainWindow):
 
         # <editor-fold desc="SETTINGS (AND PAGE)">
         # all related to settings and settings page
+        # ui
+        self.all_change_hotkey_buttons = []
+
+        self.ollama_version_drop_down = None
+        self.gemini_version_drop_down = None
+
+        self.orion_input_settings_stack = None
+
+        self.manuel_silence_time_out_slider = None
+        self.manuel_volume_threashold = None
+
+        self.voice_silence_time_out_slider = None
+        self.voice_volume_threashold = None
+        self.voice_score_threashold = None
+
+        self.adaptive_silence_time_out_slider = None
+        self.adaptive_volume_threashold = None
+        self.adaptive_score_threashold = None
+
+        # settings
         self.change_detected = False
         # </editor-fold>
 
@@ -877,6 +1176,18 @@ class MainWindow(QMainWindow):
 
     """GENRELL"""
 
+    def get_input_devices(self):
+        input_devices = []
+        for index, device in enumerate(sd.query_devices()):
+            if device['max_input_channels'] > 0:
+                input_devices.append({
+                    'id': index,
+                    'name': device['name'],
+                    'channels': device['max_input_channels'],
+                    'default_samplerate': device['default_samplerate']
+                })
+        return input_devices
+
     def get_current_timestamp(self):
         return datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
@@ -939,7 +1250,7 @@ class MainWindow(QMainWindow):
 
                 self.orion_control_element = QLabel(f"Sprachaktivierung aktiv")
                 self.orion_control_element.setObjectName("input_lable")
-                self.orion_control_element.setAlignment(Qt.AlignCenter)
+                self.orion_control_element.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
                 layer3_grid.addWidget(self.orion_control_element, 2, 0, 1, 2)
 
@@ -1056,31 +1367,338 @@ class MainWindow(QMainWindow):
 
         # <editor-fold desc="AI PROVIDER">
         # AI PROVIDER
-        ai_type_categorie = SettingsCategorie("KI Anbieter und Prompt", max_colums=4)
+        ai_type_categorie = SettingsCategorie("KI Typ", max_colums=4)
 
         ai_provider = SettingsDropDown("KI Anbieter:", ["Gemini (Cloud)", "Ollama (lokal)"])
-        ollama_version = SettingsDropDown("Ollama Version:", ["llama3.1:latest", "llama3.2:latest"])
-        gemini_version = SettingsDropDown("Gemini Version:", ["gemini-3.7-flash", "gemini-3.6-flash",
+        self.ollama_version_drop_down = SettingsDropDown("Ollama Version:", ["llama3.1:latest", "llama3.2:latest"])
+        self.gemini_version_drop_down = SettingsDropDown("Gemini Version:", ["gemini-3.7-flash", "gemini-3.6-flash",
                                                               "gemini-3.5-flash", "gemini-3.5-flash-lite"])
 
         # set default
         if self.orion_setting["llm_provider"] == "gemini":
             ai_provider.select_option("Gemini (Cloud)")
-            gemini_version.select_option(self.orion_setting["llm_version"])
+            self.gemini_version_drop_down.select_option(self.orion_setting["llm_version"])
         else:
             ai_provider.select_option("Ollama (lokal)")
-            ollama_version.select_option(self.orion_setting["llm_version"])
+            self.ollama_version_drop_down.select_option(self.orion_setting["llm_version"])
 
         # connect to function
         ai_provider.item_selected.connect(self.change_ai_provider)
-        ollama_version.item_selected.connect(self.change_llm_modell)
-        gemini_version.item_selected.connect(self.change_llm_modell)
+        self.ollama_version_drop_down.item_selected.connect(self.change_llm_modell)
+        self.gemini_version_drop_down.item_selected.connect(self.change_llm_modell)
 
         ai_type_categorie.add_new_widget(ai_provider, 0, 0, 2, 2)
-        ai_type_categorie.add_new_widget(ollama_version, 0, 2, 1, 2)
-        ai_type_categorie.add_new_widget(gemini_version, 1, 2, 1, 2)
+        ai_type_categorie.add_new_widget(self.ollama_version_drop_down, 0, 2, 1, 2)
+        ai_type_categorie.add_new_widget(self.gemini_version_drop_down, 1, 2, 1, 2)
 
         layout.addWidget(ai_type_categorie)
+        # </editor-fold>
+
+        # <editor-fold desc="PROMPT">
+        # Prompt
+        prompt_categorie = SettingsCategorie("Prompt", max_colums=4)
+
+        send_history_checkbox = QCheckBox("Sende Historie", self)
+        send_history_checkbox.setToolTip("Sende den gespeicherten Chatverlauf (Historie) mit")
+        send_history_checkbox.setChecked(self.orion_setting["send_history"])
+        send_history_checkbox.clicked.connect(lambda value: self.prompt_items_changes("send_history", value))
+
+        send_memory_checkbox = QCheckBox("Sende Erinnerungen", self)
+        send_memory_checkbox.setChecked(self.orion_setting["send_memory"])
+        send_memory_checkbox.setToolTip("Sende die gespeicherten Erinnerungen mit")
+        send_memory_checkbox.clicked.connect(lambda value: self.prompt_items_changes("send_memory", value))
+
+        prompt_categorie.add_new_widget(send_history_checkbox, 0, 0, 1, 2)
+        prompt_categorie.add_new_widget(send_memory_checkbox, 1, 0, 1, 2)
+
+        history_number_slider = SettingsSlider("Anzahl der Historie senden", 1, 2_000,
+                                               toolTip="Wie viele Elemnete des Chatverlaufes sollen maximal versendet werden?",
+                                               step_size=25)
+        history_number_slider.set_curent_value(self.orion_setting["history_max_items"])
+        history_number_slider.slider_value_changed.connect(lambda value: self.prompt_items_changes("history_max_items", value))
+
+        memory_number_slider = SettingsSlider("Anzahl der Erinnerungen senden", 1, 2_000,
+                                               toolTip="Wie viele Elemente aller Erinnerungen sollen maximal versendet werden?",
+                                               step_size=25)
+        memory_number_slider.set_curent_value(self.orion_setting["memory_max_items"])
+        memory_number_slider.slider_value_changed.connect(lambda value: self.prompt_items_changes("memory_max_items", value))
+
+        prompt_categorie.add_new_widget(history_number_slider, 0, 2, 1, 2)
+        prompt_categorie.add_new_widget(memory_number_slider, 1, 2, 1, 2)
+
+        layout.addWidget(prompt_categorie)
+        # </editor-fold>
+
+        # <editor-fold desc="INPUT TYPE">
+        # input type
+        orion_input_settings = SettingsCategorie("Input variante", max_colums=2)
+
+        choose_input_type = SettingsDropDown("Input Variante:", ["Text-Eingabe", "Manuelle Sprachaktivierung", "Automatische Sprachaktivierung", "Adaptives Gespräch"])
+        choose_input_type.index_selected.connect(self.change_prompt_input)
+        orion_input_settings.add_new_widget(choose_input_type, 0, 0, 1, 2)
+
+        self.orion_input_settings_stack = QStackedWidget(self)
+
+        # <editor-fold desc="seperate widgets">
+        text_input_widget = QWidget()
+        text_input_layout = QGridLayout(text_input_widget)
+
+        manually_widget = QWidget()
+        manually_widget_layout = QGridLayout(manually_widget)
+
+        voice_regignition_widget = QWidget()
+        voice_regignition_layout = QGridLayout(voice_regignition_widget)
+
+        adaptive_speach_widget = QWidget()
+        adaptive_speach_layout = QGridLayout(adaptive_speach_widget)
+        # </editor-fold>
+
+        # <editor-fold desc="setting ui elemnts">
+        # generell for nearly all: hotkey
+        self.all_change_hotkey_buttons = []
+        for _ in range(3):
+            new_element = HotKeyButton(self, current = self.gui_setting['push-to-talk'], added_text="für Sprachaktivierung: ")
+            new_element.hotkey_changed.connect(lambda value: self.change_gui_settings("push-to-talk", value))
+            self.all_change_hotkey_buttons.append(new_element)
+
+        ## text
+        text_lable = QLabel("Keine spezifischen Einstellungen für diesen Input Typ.")
+        text_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text_input_layout.addWidget(text_lable)
+
+        ## manuel
+        self.manuel_silence_time_out_slider = SettingsSlider("Stille Time-Out", min_value=500, max_value=5_000, step_size=25, unit="ms")
+        self.manuel_silence_time_out_slider.slider_value_changed.connect(lambda value: self.change_audio_settings("SilenceTimeout", value / 1000))
+
+        manuel_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
+        manuel_test_volume_buton.clicked.connect(self.open_volume_test)
+
+        self.manuel_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.manuel_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
+
+        manually_widget_layout.addWidget(self.manuel_silence_time_out_slider, 0, 0)
+        manually_widget_layout.addWidget(self.manuel_volume_threashold, 1, 0)
+        manually_widget_layout.addWidget(manuel_test_volume_buton, 2, 0)
+        manually_widget_layout.addWidget(self.all_change_hotkey_buttons[0], 3, 0)
+
+        ## voice
+        self.voice_silence_time_out_slider = SettingsSlider("Stille Time-Out", min_value=500, max_value=5_000, step_size=25, unit="ms")
+        self.voice_silence_time_out_slider.slider_value_changed.connect(lambda value: self.change_audio_settings("SilenceTimeout", value / 1000))
+
+        self.voice_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.voice_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
+
+        voice_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
+        voice_test_volume_buton.clicked.connect(self.open_volume_test)
+
+        self.voice_score_threashold = SettingsSlider("Spracherkennung Score-Schwelle", min_value=0, max_value=100, step_size=1, unit="%")
+        self.voice_score_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("score_threshold", value / 100))
+
+        voice_test_score_buton  = QPushButton("Score testen", self)
+        voice_test_score_buton.clicked.connect(self.open_score_test)
+
+        voice_regignition_layout.addWidget(self.voice_silence_time_out_slider, 0, 0)
+        voice_regignition_layout.addWidget(self.voice_volume_threashold, 1, 0)
+        voice_regignition_layout.addWidget(voice_test_volume_buton, 2, 0)
+        voice_regignition_layout.addWidget(self.voice_score_threashold, 3, 0)
+        voice_regignition_layout.addWidget(voice_test_score_buton, 4, 0)
+        voice_regignition_layout.addWidget(self.all_change_hotkey_buttons[1], 5, 0)
+
+        ## adaptive
+        self.adaptive_silence_time_out_slider = SettingsSlider("Stille Time-Out", min_value=500, max_value=5_000, step_size=25, unit="ms")
+        self.adaptive_silence_time_out_slider.slider_value_changed.connect(lambda value: self.change_audio_settings("SilenceTimeout", value / 1000))
+
+        self.adaptive_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.adaptive_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
+
+        adaptive_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
+        adaptive_test_volume_buton.clicked.connect(self.open_volume_test)
+
+        self.adaptive_score_threashold = SettingsSlider("Spracherkennung Score-Schwelle", min_value=0, max_value=100, step_size=1, unit="%")
+        self.adaptive_score_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("score_threshold", value / 100))
+
+        adaptive_test_score_buton  = QPushButton("Score testen", self)
+        adaptive_test_score_buton.clicked.connect(self.open_score_test)
+
+        adaptive_speach_layout.addWidget(self.adaptive_silence_time_out_slider, 0, 0)
+        adaptive_speach_layout.addWidget(self.adaptive_volume_threashold, 1, 0)
+        adaptive_speach_layout.addWidget(adaptive_test_volume_buton, 2, 0)
+        adaptive_speach_layout.addWidget(self.adaptive_score_threashold, 3, 0)
+        adaptive_speach_layout.addWidget(adaptive_test_score_buton, 4, 0)
+        adaptive_speach_layout.addWidget(self.all_change_hotkey_buttons[2], 5, 0)
+
+        ## set saved values
+        for item in list(self.orion_setting["oww_settings"].keys()):
+            self.change_audio_settings(item, self.orion_setting["oww_settings"][item])
+
+        # </editor-fold>
+
+        # <editor-fold desc="add everything">
+        self.orion_input_settings_stack.addWidget(text_input_widget)
+        self.orion_input_settings_stack.addWidget(manually_widget)
+        self.orion_input_settings_stack.addWidget(voice_regignition_widget)
+        self.orion_input_settings_stack.addWidget(adaptive_speach_widget)
+
+        orion_input_settings.add_new_widget(self.orion_input_settings_stack, 1, 0, 1, 2)
+
+        if not self.orion_setting["use_stt"]:
+            choose_input_type.select_option("Text-Eingabe")
+        else:
+            current_setting = self.orion_setting["speaking_recognition_mode"]
+            if current_setting == "manually":
+                choose_input_type.select_option("Manuelle Sprachaktivierung")
+                self.orion_input_settings_stack.setCurrentIndex(1)
+            elif current_setting == "voice":
+                choose_input_type.select_option("Automatische Sprachaktivierung")
+                self.orion_input_settings_stack.setCurrentIndex(2)
+            elif current_setting == "smart":
+                choose_input_type.select_option("Adaptives Gespräch")
+                self.orion_input_settings_stack.setCurrentIndex(3)
+
+        layout.addWidget(orion_input_settings)
+        # </editor-fold>
+        # </editor-fold>
+
+        # <editor-fold desc="TTS">
+        tts_categorie = SettingsCategorie("Text-To-Speach", max_colums=4)
+
+        choose_tts_voice = SettingsDropDown("Stimme", ["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"])
+        choose_tts_voice.select_option(self.orion_setting["tts_voice"])
+        choose_tts_voice.item_selected.connect(lambda value: self.voice_change("voice", value=value))
+
+        voice_speed_slider = SettingsSlider("Geschwindigkeit", min_value=70, max_value=200, step_size=1, unit="%")
+        voice_speed_slider.set_curent_value(self.orion_setting["tts_settings"]["speed"] * 100)
+        voice_speed_slider.slider_value_changed.connect(lambda value: self.voice_change("speed", value / 100))
+
+        voice_steps_slider = SettingsSlider("Schritte", min_value=4, max_value=16, step_size=1, unit="")
+        voice_steps_slider.set_curent_value(self.orion_setting["tts_settings"]["total_steps"])
+        voice_steps_slider.slider_value_changed.connect(lambda value: self.voice_change("total_steps", value))
+
+        test_voice_button = QPushButton("Stimme Testen", self)
+        test_voice_button.clicked.connect(lambda: self.voice_change("voice_test", None))
+
+        tts_categorie.add_new_widget(choose_tts_voice, 0, 0, 1, 2)
+        tts_categorie.add_new_widget(voice_speed_slider, 0, 2, 1, 2)
+        tts_categorie.add_new_widget(voice_steps_slider, 1, 2, 1, 2)
+        tts_categorie.add_new_widget(test_voice_button, 2, 0, 1, 4)
+
+        layout.addWidget(tts_categorie)
+        # </editor-fold>
+
+        # <editor-fold desc="EXECUTION">
+        # execution
+        execution_categorie = SettingsCategorie("Ausführung", max_colums=4)
+
+        python_execution_drop_down = SettingsDropDown("Python-Ausführung", ["Aus", "Bestätigung erforderlich", "sofort ausführen"])
+        if self.orion_setting["allow_python_execution"]:
+            if self.orion_setting["auto_python_execution"]:
+                python_execution_drop_down.select_option("sofort ausführen")
+            else:
+                python_execution_drop_down.select_option("Bestätigung erforderlich")
+        else:
+            python_execution_drop_down.select_option("Aus")
+        python_execution_drop_down.index_selected.connect(lambda index: self.change_execution("python", index))
+
+        cmd_execution_drop_down = SettingsDropDown("CMD-Ausführung", ["Aus", "Bestätigung erforderlich", "sofort ausführen"])
+        if self.orion_setting["allow_cmd_execution"]:
+            if self.orion_setting["auto_cmd_execution"]:
+                cmd_execution_drop_down.select_option("sofort ausführen")
+            else:
+                cmd_execution_drop_down.select_option("Bestätigung erforderlich")
+        else:
+            cmd_execution_drop_down.select_option("Aus")
+        cmd_execution_drop_down.index_selected.connect(lambda index: self.change_execution("cmd", index))
+
+        cmd_black_list = QLineEdit(self)
+        cmd_black_list.setText("".join(f"{item} ; " for item in self.orion_setting["cmd_blacklist"]))
+        cmd_black_list.setPlaceholderText("Liste eingeben...")
+        cmd_black_list.setToolTip("Die CMD-Ausführung wird automatisch gestoppt, sobald einer der Befehle erkannt wurde.\nElemente mit ; trennen.")
+        cmd_black_list.editingFinished.connect(lambda: self.change_execution("cmd_blacklist", cmd_black_list.text()))
+
+        py_timeout_slider = SettingsSlider("Python Time-Out", min_value=10, max_value=300, unit="sec.")
+        py_timeout_slider.set_curent_value(self.orion_setting["python_timeout"])
+        py_timeout_slider.slider_value_changed.connect(lambda value: self.change_execution("python_timeout", value))
+
+        cmd_timeout_slider = SettingsSlider("CMD Time-Out", min_value=10, max_value=300, unit="sec.")
+        cmd_timeout_slider.set_curent_value(self.orion_setting["cmd_timeout"])
+        cmd_timeout_slider.slider_value_changed.connect(lambda value: self.change_execution("cmd_timeout", value))
+
+
+        tavily_drop_down = SettingsDropDown("Online Suchanfrage",["Verbieten", "Erlauben"])
+        tavily_drop_down.select_option("Verbieten" if not self.orion_setting["allow_tavily_search"] else "Erlauben")
+        tavily_drop_down.index_selected.connect(lambda index: self.change_execution("allow_tavily_search", bool(index)))
+
+        tavily_type = SettingsDropDown("Suchtiefe", ["basic", "advanced", "fast"])
+        tavily_type.select_option(self.orion_setting["tavily_settings"]["search_depth"])
+        tavily_type.item_selected.connect(lambda index: self.change_execution("search_depth", index))
+
+        tavily_forbidden_domains = QLineEdit(self)
+        tavily_forbidden_domains.setPlaceholderText("Liste eingeben...")
+        tavily_forbidden_domains.setText("".join(f"{item} ; " for item in self.orion_setting["tavily_settings"]["exclude_domains"]))
+        tavily_forbidden_domains.setToolTip("Alle Domains die bei der Suchanfagre ignoriert werden.\nDomains mit ; trennen.")
+        tavily_forbidden_domains.editingFinished.connect(lambda : self.change_execution("exclude_domains", tavily_forbidden_domains.text()))
+
+        execution_categorie.add_new_widget(python_execution_drop_down, 0, 0, 1, 2)
+        execution_categorie.add_new_widget(cmd_execution_drop_down, 0, 2, 1, 2)
+
+        execution_categorie.add_new_widget(QLabel("  CMD-Blacklist:"), 1, 0, 1, 1)
+        execution_categorie.add_new_widget(cmd_black_list, 1, 1, 1, 3)
+
+        execution_categorie.add_new_widget(py_timeout_slider, 2, 0, 1, 2)
+        execution_categorie.add_new_widget(cmd_timeout_slider, 2, 2, 1, 2)
+
+        execution_categorie.add_new_widget(tavily_drop_down, 3, 0, 1, 2)
+        execution_categorie.add_new_widget(tavily_type, 3, 2, 1, 2)
+
+        execution_categorie.add_new_widget(QLabel("  Domain-Blacklist:"), 4, 0, 1, 1)
+        execution_categorie.add_new_widget(tavily_forbidden_domains, 4, 1, 1, 3)
+
+        layout.addWidget(execution_categorie)
+        # </editor-fold>
+
+        # <editor-fold desc="GENERLL">
+        # Generell
+        genrell_categorie = SettingsCategorie("Allgemein", max_colums=4)
+
+        ai_volume_slider = SettingsSlider("KI Lautstärke", min_value=0, max_value=200, unit="%")
+        ai_volume_slider.set_curent_value(self.gui_setting["orion_volume"] * 100)
+        ai_volume_slider.slider_value_changed.connect(lambda value: self.change_gui_settings("orion_volume", value / 100))
+
+        ui_volume_slider = SettingsSlider("GUI Lautstärke", min_value=0, max_value=200, unit="%")
+        ui_volume_slider.set_curent_value(self.gui_setting["ui_sounds"] * 100)
+        ui_volume_slider.slider_value_changed.connect(lambda value: self.change_gui_settings("ui_sounds", value / 100))
+
+        choose_device = SettingsDropDown("Datenverarbeitung über", ["CPU", "GPU"])
+        choose_device.select_option(self.orion_setting["tts_and_stt_device"].upper())
+        choose_device.setToolTip("Verarbeitung des TTS und STT Modell über GPU oder CPU?")
+        choose_device.item_selected.connect(lambda index: self.change_execution("tts_and_stt_device", index))
+
+        cuda_dir_input = QLineEdit(self)
+        cuda_dir_input.setPlaceholderText("Pfad eingeben...")
+        cuda_dir_input.setText(self.orion_setting["cuda_dir"])
+        cuda_dir_input.setToolTip("Der Pfad zu Cuda 12.9.")
+        cuda_dir_input.editingFinished.connect(lambda : self.change_execution("cuda_dir", cuda_dir_input.text()))
+
+        added_ai_role_input = QLineEdit(self)
+        added_ai_role_input.setPlaceholderText("Weitere KI-Anweisung eingeben...")
+        added_ai_role_input.setToolTip("Hinzuzufügende KI-Anweisungen. (Alles möglich)")
+        added_ai_role_input.setText(self.orion_setting["added_ai_role"])
+        added_ai_role_input.editingFinished.connect(lambda : self.change_execution("added_ai_role", added_ai_role_input.text()))
+
+
+        genrell_categorie.add_new_widget(ai_volume_slider, 0, 0, 1, 2)
+        genrell_categorie.add_new_widget(ui_volume_slider, 0, 2, 1, 2)
+
+        genrell_categorie.add_new_widget(choose_device, 1, 0, 1, 4)
+
+        genrell_categorie.add_new_widget(QLabel("Cuda Pfad"), 2, 0, 1, 1)
+        genrell_categorie.add_new_widget(cuda_dir_input, 2, 1, 1, 3)
+
+
+        genrell_categorie.add_new_widget(QLabel("KI-Anweisung"), 3, 0, 1, 1)
+        genrell_categorie.add_new_widget(added_ai_role_input, 3, 1, 1, 3)
+
+        layout.addWidget(genrell_categorie)
         # </editor-fold>
 
         layout.addStretch()
@@ -1332,7 +1950,6 @@ class MainWindow(QMainWindow):
         self.save_edited_memory_func(self.all_memorys)
         self.update_memory_entrys(init=False)
 
-
     """STATIC FUNCTIONS"""
 
     def wav_to_rms(self, wav_data, fs):
@@ -1416,15 +2033,158 @@ class MainWindow(QMainWindow):
     """SETTING CHANGE (EVENT ON SIGNAL)"""
 
     def update_settings(self):
-        pass
+        self.save_new_settings_func(self.orion_setting)
 
     @has_something_changed
     def change_ai_provider(self, new_provider):
-        print(new_provider)
+        if "gemini" in new_provider.lower():
+            self.orion_setting["llm_provider"] = "gemini"
+            self.gemini_version_drop_down.select_option("gemini-3.5-flash-lite")
+            self.change_llm_modell("gemini-3.5-flash-lite")
+        elif "ollama" in new_provider.lower():
+            self.orion_setting["llm_provider"] = "ollama"
+            self.ollama_version_drop_down.select_option("llama3.1:latest")
+            self.change_llm_modell("llama3.1:latest")
+        else:
+            self.orion_setting["llm_provider"] = new_provider
 
     @has_something_changed
     def change_llm_modell(self, new_modell):
-        print(new_modell)
+        if self.orion_setting["llm_provider"] == "gemini" and "gemini" in new_modell.lower():
+            self.orion_setting["llm_version"] = new_modell
+        elif self.orion_setting["llm_provider"] == "ollama" and "gemini" not in new_modell.lower():
+            self.orion_setting["llm_version"] = new_modell
+
+    @has_something_changed
+    def prompt_items_changes(self, type_changed, value):
+        self.orion_setting[type_changed] = value
+
+    @has_something_changed
+    def change_prompt_input(self, new_prompt_input):
+        self.orion_input_settings_stack.setCurrentIndex(new_prompt_input)
+
+        if new_prompt_input == 0:
+            self.orion_setting["use_stt"] = False
+        elif new_prompt_input == 1:
+            self.orion_setting["use_stt"] = True
+            self.orion_setting["speaking_recognition_mode"] = "manually"
+        elif new_prompt_input == 2:
+            self.orion_setting["use_stt"] = True
+            self.orion_setting["speaking_recognition_mode"] = "voice"
+        elif new_prompt_input == 3:
+            self.orion_setting["use_stt"] = True
+            self.orion_setting["speaking_recognition_mode"] = "smart"
+
+    @has_something_changed
+    def change_audio_settings(self, type_changed, value):
+        self.orion_setting["oww_settings"][type_changed] = value
+
+        if type_changed == "SilenceTimeout":
+            self.manuel_silence_time_out_slider.set_curent_value(value * 1000)
+            self.voice_silence_time_out_slider.set_curent_value(value * 1000)
+            self.adaptive_silence_time_out_slider.set_curent_value(value * 1000)
+        elif type_changed == "threshold":
+            self.manuel_volume_threashold.set_curent_value(value)
+            self.voice_volume_threashold.set_curent_value(value)
+            self.adaptive_volume_threashold.set_curent_value(value)
+        elif type_changed == "score_threshold":
+            self.voice_score_threashold.set_curent_value(value * 100)
+            self.adaptive_score_threashold.set_curent_value(value * 100)
+
+    def open_volume_test(self):
+        dialog_window = VolumeTest(self)
+
+        self.stt_thread.send_rms_to_volume_test(True, dialog_window.recv_rms)
+        dialog_window.apply_new_volume.connect(lambda value: self.change_audio_settings("threshold", value))
+
+        dialog_window.exec()
+
+        self.stt_thread.send_rms_to_volume_test(False)
+
+    def open_score_test(self):
+        dialog_window = ScoreTest(self)
+
+        self.stt_thread.send_score_to_test(True, dialog_window.recv_score)
+        dialog_window.apply_new_score.connect(lambda value: self.change_audio_settings("score_threshold", value / 100))
+
+        dialog_window.exec()
+
+        self.stt_thread.send_score_to_test(False)
+
+    @has_something_changed
+    def voice_change(self, type_changed, value):
+        if type_changed == "voice":
+            self.orion_setting["tts_voice"] = value
+
+        elif type_changed == "speed":
+            self.orion_setting["tts_settings"]["speed"] = value
+
+        elif type_changed == "total_steps":
+            self.orion_setting["tts_settings"]["total_steps"] = value
+
+        elif type_changed == "voice_test":
+
+            sentence = random.choice(self.gui_setting["voice_test_sentences"])
+
+            sd.stop(True)
+            self.ui_current_status.emit(2)
+            self.play_sound("orion_finished")
+            tts_response = self.tts_func(sentence, specific_voice_style=self.orion_setting["tts_voice"])
+            self.process_orion_output({"content": sentence, "no_safe":True}, tts_response[0], tts_response[1])
+
+    @has_something_changed
+    def change_execution(self, type_changed, value):
+        if type_changed == "python":
+            if value == 0:
+                self.orion_setting["allow_python_execution"] = False
+            else:
+                self.orion_setting["allow_python_execution"] = True
+                if value == 1:
+                    self.orion_setting["auto_python_execution"] = False
+                else:
+                    self.orion_setting["auto_python_execution"] = True
+        elif type_changed == "cmd":
+            if value == 0:
+                self.orion_setting["allow_cmd_execution"] = False
+            else:
+                self.orion_setting["allow_cmd_execution"] = True
+                if value == 1:
+                    self.orion_setting["auto_cmd_execution"] = False
+                else:
+                    self.orion_setting["auto_cmd_execution"] = True
+        elif type_changed == "cmd_blacklist":
+            all_values = value.split(";")
+            valid_values = []
+            for v in all_values:
+                if v.strip():
+                    valid_values.append(v.strip())
+            self.orion_setting["cmd_blacklist"] = valid_values
+        elif type_changed in ["cmd_timeout", "python_timeout", "allow_tavily_search", "cuda_dir", "added_ai_role"]:
+            self.orion_setting[type_changed] = value
+        elif type_changed == "search_depth":
+            self.orion_setting["tavily_settings"]["search_depth"] = value
+        elif type_changed == "exclude_domains":
+            all_values = value.split(";")
+            valid_values = []
+            for v in all_values:
+                if v.strip():
+                    valid_values.append(v.strip())
+            self.orion_setting["tavily_settings"]["exclude_domains"] = valid_values
+        elif type_changed == "tts_and_stt_device":
+            self.orion_setting["tts_and_stt_device"] = value.lower()
+        print(type_changed, value)
+
+    def change_gui_settings(self, type_changed, value):
+        if type_changed in ["orion_volume", "ui_sounds", "push-to-talk"]:
+            self.gui_setting[type_changed] = value
+
+        if type_changed == "push-to-talk":
+            for i in range(3):
+                self.all_change_hotkey_buttons[i].set_hotkey(value)
+
+        # save gui file
+        with open(self.gui_settings_file, "w", encoding="utf-8") as f:
+            json.dump(self.gui_setting, f, indent=4, ensure_ascii=False)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -1435,7 +2195,7 @@ if __name__ == "__main__":
         test_comp = {"content":"Hallo, dies ist kein KI generierter Inhalt, sonder lediglich ein Test. Bitte starte die Datei: Mein punkt p y um das programm korrekt zu starten."}
         return test_comp
 
-    def tts_res(text: str):
+    def tts_res(text: str, specific_voice_style: str):
         time.sleep(.5)
         data, fs = sf.read(rf"./assets/gui/test.wav")
         return data, fs
@@ -1456,6 +2216,10 @@ if __name__ == "__main__":
         with open("./assets/json_files/memory.json", "w", encoding="utf-8") as mem_file:
             json.dump(edited_memory, mem_file, ensure_ascii=False, indent=4)
 
+    def save_new_settings(n_settings):
+        with open(rf"./assets/settings.json", "w", encoding="utf-8") as settings_file:
+            json.dump(n_settings, settings_file, ensure_ascii=False, indent=4)
+
     window = MainWindow(
         tts_func=tts_res,
         ai_response_func=ai_res,
@@ -1467,11 +2231,13 @@ if __name__ == "__main__":
         send_multiple_messages_func=lambda *args, is_final: "No Func",
         record_audio_func=lambda *args: "No Func",
         transcript_audio_func=lambda *args, audio_data: "No func",
-        predict_activation_word_func=lambda *args: False,
+        predict_activation_word_func=lambda *args: [False, 0.1],
         get_current_chat_history=get_history,
         get_current_memory=get_memory,
-        save_edited_memory_func=save_edited_memory
+        save_edited_memory_func=save_edited_memory,
+        save_new_settings_func=save_new_settings,
     )
+
     window.showMaximized()
 
     sys.exit(app.exec())

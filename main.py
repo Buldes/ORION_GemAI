@@ -287,7 +287,7 @@ class ORION_GemAI:
         self.pyside_app = QApplication(sys.argv)
         self.gui_class = orion_gui.MainWindow(
             ai_response_func=self.send_message,
-            tts_func=lambda text: self.tts_say_text(text, deactivate_palyback_worker=True, return_wave=True),
+            tts_func=lambda text, specific_voice_style: self.tts_say_text(text, deactivate_palyback_worker=True, return_wave=True, specific_voice_style=specific_voice_style),
 
             py_execution_func=self.run_python_script,
             cmd_execution_func=self.run_cmd_commands,
@@ -303,7 +303,8 @@ class ORION_GemAI:
             predict_activation_word_func = self.predict_activation_word,
             get_current_chat_history = lambda : self.chat_history,
             get_current_memory= lambda : self.permanent_memory,
-            save_edited_memory_func=self.save_edited_new_memory
+            save_edited_memory_func=self.save_edited_new_memory,
+            save_new_settings_func = self.save_new_settings
         )
 
     """TTS"""
@@ -313,7 +314,8 @@ class ORION_GemAI:
         self.tts_voice = TTS(auto_download=True, model_dir=self.tts_voice_files + "/")
         self.syn_config = self.tts_voice.get_voice_style(voice_name=self.tts_voice_style)
 
-    def tts_say_text(self, text, wait_till_finish: bool = False, return_wave: bool = False, deactivate_palyback_worker: bool = False):
+    def tts_say_text(self, text, wait_till_finish: bool = False, return_wave: bool = False, deactivate_palyback_worker: bool = False,
+                     specific_voice_style = ""):
         self.output("Generating Voice...", "log")
         sentences = re.split(r'(?<=[.!?])\s+', text)
         audio_queue = queue.Queue()
@@ -344,10 +346,15 @@ class ORION_GemAI:
             self.output("TTS: Text is empty.", "warning")
             return None
 
+        if specific_voice_style != "":
+            use_syn_config = self.tts_voice.get_voice_style(voice_name=specific_voice_style)
+        else:
+            use_syn_config = self.syn_config
+
         wav, sr = self.tts_voice.synthesize(
             text=text,
             lang="na",
-            voice_style=self.syn_config,
+            voice_style=use_syn_config,
             total_steps=self.tts_settings["total_steps"],
             speed=self.tts_settings["speed"]
         )
@@ -451,7 +458,7 @@ class ORION_GemAI:
                     try:
                         audio_chunk = self.stt_audio_queue.get(timeout=0.1)
 
-                        self.word_detected = self.predict_activation_word(audio_chunk)
+                        self.word_detected, _ = self.predict_activation_word(audio_chunk)
                     except queue.Empty:
                         continue
 
@@ -461,13 +468,13 @@ class ORION_GemAI:
         for model_name, score in prediction.items():
 
             if time.time() - self.oww_timeout[1] <= self.oww_timeout[0]:
-                return False
+                return False, score
 
             if score > self.oww_settings["score_threshold"]:
                 self.output("Activation Word detected", "log")
-                return True
+                return True, score
 
-        return False
+        return False, 0
 
     def audio_callback(self,indata, frames, time_info, status):
         if status:
@@ -673,6 +680,11 @@ class ORION_GemAI:
 
         with open(self.chat_history_file, "r", encoding="utf-8") as f:
             self.chat_history = json.load(f)
+
+    def save_new_settings(self, new_settings):
+        with open(self.settings_file, "w", encoding="utf-8") as f:
+            json.dump(new_settings, f, indent=4, ensure_ascii=False)
+        self.load_settings()
 
     """ONLINE SEARCH"""
 
