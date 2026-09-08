@@ -23,9 +23,16 @@ Aber keine Sorge: Die Einstellungen sind simple gehalten. Du kannst die Standard
 2. Internet (auch wenn es in Deutschland schwierig ist)
 
 ### Step-by-Step
+Es wird empfohlen ein venv zu erstellen, da Orion beim ausführen von Python Code nicht installiert Pakete und Bibliotheken automatisch nachinstalliert. 
+1. Venv erstellen
+2. venv aktivieren
+3. Pakete und Bibliotheken installieren
+4. Programm ausführen, um fehlende Datein automatisch zu erstellen oder herunterzuladen.
+5. Fertig
 
+Das TTS-Modell kann Ressourcen intensiv sein und mit der CPU länger benötigen. Es wird deswegen empfohlen die GPU-Nutzung einzurichten. Leider konnte dies nur für die NVIDIA RTX 3060 TI getestet werden, sodass nicht garantiert werden kann, dass nicht Nvidia GPUs unterstützt werden. 
 
-## Settup für GPU Nutzung 
+## Setup für GPU Nutzung 
 1. Führe ```./configure_for_gpu.cmd``` aus
 2. Installieren Cuda 12.9 ( **KEINE ANDERE VERSION** )
 3. Setze ``"cuda_dir"`` in ```./assets/settings.json``` (falls es verändert wurde)
