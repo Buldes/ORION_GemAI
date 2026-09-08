@@ -1,6 +1,6 @@
 {
-    "llm_provider": "ollama",
-    "llm_version": "llama3.1:latest",
+    "llm_provider": "google",
+    "llm_version": "gemini-3.5-flash-lite",
     "ai_temperature": 0.5,
     "send_history": false,
     "send_memory": true,
@@ -13,8 +13,8 @@
     "oww_settings": {
         "InitialSilenceTimeout": 10,
         "SilenceTimeout": 2.0,
-        "threshold": 2153,
-        "score_threshold": 0.41
+        "threshold": 480,
+        "score_threshold": 0.52
     },
     "activation_sound": true,
     "active_words": [
@@ -35,12 +35,12 @@
         "Anwesend.",
         "Wie kann ich helfen?"
     ],
-    "speaking_recognition_mode": "voice",
+    "speaking_recognition_mode": "smart",
     "whisper_model": "turbo",
     "use_tts": true,
-    "tts_voice": "M4",
+    "tts_voice": "M1",
     "tts_settings": {
-        "speed": 1.2,
+        "speed": 1.25,
         "total_steps": 16
     },
     "tts_and_stt_device": "gpu",

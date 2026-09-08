@@ -1,7 +1,7 @@
 {
     "push-to-talk": "F4",
     "ui_sounds": 2.0,
-    "orion_volume": 0.18,
+    "orion_volume": 0.84,
     "voice_test_sentences": [
         "Systemdiagnose gestartet: Dies ist ein ausführlicher Sprachtest, um die Tonhöhe, Satzmelodie und Verständlichkeit der TTS-Synthese von ORION optimal zu kalibrieren.",
         "Wir prüfen jetzt die Sprachausgabe von ORION, damit sichergestellt ist, dass die generierten Audiodaten flüssig, ohne Verzögerungen und in hervorragender Klangqualität wiedergegeben werden.",
@@ -13,5 +13,7 @@
         "Hallo, mein Name ist ORION, und dieser Test stellt sicher, dass auch schwierige Konsonantenkombinationen sowie lange verschachtelte Sätze absolut verständlich artikuliert werden.",
         "Egal ob lokale Offline-Verarbeitung oder komplexe Aufgaben – die Audio-Engine von ORION läuft stabil und liefert dir jederzeit eine klare akustische Rückmeldung.",
         "Sprachtest erfolgreich abgeschlossen: Sämtliche Parameter für die TTS-Ausgabe sind nun optimal eingestellt und ORION steht dir voll einsatzbereit zur Verfügung."
-    ]
+    ],
+    "character_templates": "/assets/json_files/charcter_templates/",
+    "max_history_shown": 100
 }

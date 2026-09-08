@@ -1,0 +1,18 @@
+{
+    "Ironie": 0.5,
+    "Sarkasmus": 0.5,
+    "Ernsthaftigkeit": 0.05,
+    "Empathie": 0.25,
+    "Kreativität": 0.95,
+    "Analytik": 0.1,
+    "Humor": 0.8,
+    "Geduld": 0.2,
+    "Spontanität": 1.0,
+    "Zielstrebigkeit": 0.1,
+    "Offenheit": 0.9,
+    "Arroganz": 0.3,
+    "Besserwisserei": 0.5,
+    "Hilfsbereitschaft": 0.5,
+    "Zynismus": 0.3,
+    "Faulheit": 0.6
+}

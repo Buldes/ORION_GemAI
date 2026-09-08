@@ -4,12 +4,12 @@ import sys
 import os
 import time
 import queue
-from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation, QObject, QUrl, Qt
+from PySide6.QtCore import QThread, Signal, QTimer, QEasingCurve, QPropertyAnimation, QObject, QUrl, Qt, QProcess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QButtonGroup, QLineEdit,
-    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QRadioButton, QCheckBox,
-    QSlider, QTextEdit, QDialog, QProgressBar
+    QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QCheckBox,
+    QSlider, QDialog, QProgressBar, QSizePolicy
 )
 from PySide6.QtGui import QFontDatabase, QFont, Qt, QFontMetrics, QKeySequence
 from PySide6.QtMultimedia import QSoundEffect
@@ -189,6 +189,7 @@ class OrionExecution(QThread):
     results = Signal(object)
     current_status = Signal(int)
     request_popup = Signal(str, str)
+    has_conversation_ended = Signal(bool)
 
     def __init__(self, settings, py_execution_func, cmd_execution_func, online_serach_func, save_chat_history_func, save_memory_func):
         super().__init__()
@@ -291,7 +292,9 @@ class OrionExecution(QThread):
                                 self.all_results.append(["cmd", "Der Nutzer hat die CMD ausführung verweigert."])
 
                 if "end_of_conversation" in all_keys:
-                    pass
+                    self.has_conversation_ended.emit(self.data["end_of_conversation"])
+                else:
+                    self.has_conversation_ended.emit(False)
 
 
                 # send results
@@ -342,6 +345,7 @@ class SpeachToText(QThread):
         self.last_record_end_time = 0
         self.ui_current_status = 0
         self.has_already_happened = False
+        self.keep_conversation = False
 
         self.send_rms_values = False
         self.rms_bus = lambda x: x
@@ -416,7 +420,29 @@ class SpeachToText(QThread):
 
                 else:
                     if self.listening_mode == "smart":
-                        pass
+                        self.start_record = self.keep_conversation
+
+                        if self.keep_conversation:
+                            self.keep_conversation = False
+                        else:
+                            try:
+                                audio_chunk = self.stt_audio_queue.get(timeout=0.1)
+                                prediction, score = self.predict_activation_word_func(audio_chunk)
+
+                                if time.time() - self.last_record_end_time < 2:
+                                    with self.stt_audio_queue.mutex:
+                                        self.stt_audio_queue.queue.clear()
+                                    continue
+
+                                if prediction:
+                                    self.start_record = True
+
+                                with self.stt_audio_queue.mutex:
+                                    self.stt_audio_queue.queue.clear()
+
+                            except queue.Empty:
+                                pass
+
 
                     elif self.listening_mode == "voice":
                         try:
@@ -469,8 +495,12 @@ class SpeachToText(QThread):
 
         start_time = time.time()
 
+        InitialSilenceTimeout = self.settings["oww_settings"]["InitialSilenceTimeout"]
+        if self.settings["speaking_recognition_mode"] == "smart":
+            InitialSilenceTimeout *= 10
+
         while True:
-            if not speech_started and (time.time() - start_time > self.settings["oww_settings"]["InitialSilenceTimeout"]):
+            if not speech_started and (time.time() - start_time > InitialSilenceTimeout):
                 print("Timeout: No speech detected")
                 return False
 
@@ -520,8 +550,8 @@ class SpeachToText(QThread):
 class GlobalHotkeyListener(QObject):
     triggered = Signal(str)
 
-    def start_listening(self):
-        keyboard.add_hotkey("F7", lambda: self.triggered.emit("F7"))
+    def start_listening(self, hotkey):
+        keyboard.add_hotkey(hotkey, lambda: self.triggered.emit("push-to-talk"))
 
 class TextBubble(QWidget):
     def __init__(self, text_data, parent=None):
@@ -591,8 +621,16 @@ f"""                Website: {url[2]}
         else:
             text_to_show = text_data["content"]
 
-        self.content_lable = QLabel(str(text_to_show))
+        self.content_lable = QLabel("")
         self.content_lable.setObjectName("text-buble-content")
+
+        metrics = QFontMetrics(self.content_lable.font())
+        required_width = metrics.horizontalAdvance(str(text_to_show)) + 8
+        if text_data["role"] != "python_code_script" and required_width > 900:
+            self.content_lable.setWordWrap(True)
+            self.content_lable.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self.content_lable.setText(f"<p style='line-height: 150%;'>{str(text_to_show)}</p>")
 
         # time
         time_text: str = text_data["time"]
@@ -604,6 +642,9 @@ f"""                Website: {url[2]}
         layout.addWidget(self.type_lable)
         layout.addWidget(self.content_lable)
         layout.addWidget(self.time_lable)
+
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 class MemoryBubble(QWidget):
     content_chnage = Signal(str, int)
@@ -767,28 +808,33 @@ class VolumeTest(QDialog):
         self.max_value_lable = QLabel("---")
         self.max_value_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title_lable = QLabel("Maximaler Wert")
-        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(title_lable, 0, 0, 1, 1)
-        layout.addWidget(self.max_value_lable, 1, 0, 1, 1)
+        self.recommended_value = QLabel("---")
+        self.recommended_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(QLabel("Maximaler Wert"), 0, 0, 1, 1)
+        layout.addWidget(self.max_value_lable, 0, 1, 1, 1)
+
+
+        layout.addWidget(QLabel("Empfohlen:"), 1, 0, 1, 1)
+        layout.addWidget(self.recommended_value, 1, 1, 1, 1)
 
         apply_button = QPushButton("Wert übernehmen")
         apply_button.setObjectName("apply-button")
-        apply_button.clicked.connect(lambda : self.apply_new_volume.emit(self.max_value))
+        apply_button.clicked.connect(lambda : self.apply_new_volume.emit(int(self.max_value * 0.8)))
         self.apply_new_volume.connect(self.close)
 
         exit_button = QPushButton("Abbrechen")
         exit_button.setObjectName("exit-button")
         exit_button.clicked.connect(self.close)
 
-        layout.addWidget(apply_button, 2, 0, 1, 1)
-        layout.addWidget(exit_button, 3, 0, 1, 1)
+        layout.addWidget(apply_button, 2, 0, 1, 2)
+        layout.addWidget(exit_button, 3, 0, 1, 2)
 
         # right side: current volume
         self.volume_lable = QLabel(str(self.max_value))
         self.volume_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.volume_lable, 3, 1, 1, 1)
+        layout.addWidget(self.volume_lable, 3, 2, 1, 1)
 
         self.volume_bar = QProgressBar(self)
         self.volume_bar.setObjectName("volume-bar")
@@ -797,7 +843,7 @@ class VolumeTest(QDialog):
         self.volume_bar.setTextVisible(False)
         self.volume_bar.setFixedWidth(50)
 
-        layout.addWidget(self.volume_bar, 0, 1, 3, 1)
+        layout.addWidget(self.volume_bar, 0, 2, 3, 1)
 
     def recv_rms(self, rms_value):
         rms_value_int = int(rms_value)
@@ -809,6 +855,7 @@ class VolumeTest(QDialog):
         self.volume_bar.setRange(0, self.max_value)
 
         self.max_value_lable.setText(f"{self.max_value}")
+        self.recommended_value.setText(f"{int(self.max_value * 0.8)}")
 
 class ScoreTest(QDialog):
     apply_new_score = Signal(int)
@@ -824,26 +871,29 @@ class ScoreTest(QDialog):
         layout = QGridLayout(self)
 
         # left side
-        self.max_score_lable = QLabel("-")
+        self.max_score_lable = QLabel("---")
         self.max_score_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title_lable = QLabel("Maximaler Wert")
-        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(QLabel("Maximaler Wert"), 0, 0, 1, 1)
+        layout.addWidget(self.max_score_lable, 0, 1, 1, 1)
 
-        layout.addWidget(title_lable, 0, 0, 1, 1)
-        layout.addWidget(self.max_score_lable, 1, 0, 1, 1)
+        self.recommended_score_lable = QLabel("---")
+        self.recommended_score_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(QLabel("Empfohlen"), 1, 0, 1, 1)
+        layout.addWidget(self.recommended_score_lable, 1, 1, 1, 1)
 
         apply_button = QPushButton("Wert übernehmen")
         apply_button.setObjectName("apply-button")
-        apply_button.clicked.connect(lambda: self.apply_new_score.emit(self.max_value))
+        apply_button.clicked.connect(lambda: self.apply_new_score.emit(int(self.max_value * 0.8)))
         self.apply_new_score.connect(self.close)
 
         exit_button = QPushButton("Abbrechen")
         exit_button.setObjectName("exit-button")
         exit_button.clicked.connect(self.close)
 
-        layout.addWidget(apply_button, 2, 0, 1, 1)
-        layout.addWidget(exit_button, 3, 0, 1, 1)
+        layout.addWidget(apply_button, 2, 0, 2, 1)
+        layout.addWidget(exit_button, 3, 0, 2, 1)
 
         # right side
         self.score_bar = QProgressBar(self)
@@ -856,8 +906,8 @@ class ScoreTest(QDialog):
         self.score_bar_lable = QLabel(self)
         self.score_bar_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(self.score_bar, 0, 1, 3, 1)
-        layout.addWidget(self.score_bar_lable, 3, 1, 1, 1)
+        layout.addWidget(self.score_bar, 0, 2, 3, 1)
+        layout.addWidget(self.score_bar_lable, 3, 2, 1, 1)
 
 
     def recv_score(self, score_value):
@@ -868,6 +918,7 @@ class ScoreTest(QDialog):
 
         self.max_value = max(self.max_value, score_value_int)
         self.max_score_lable.setText(str(self.max_value) + "%")
+        self.recommended_score_lable.setText(str(int(self.max_value * 0.8)) + "%")
 
 class HotKeyButton(QPushButton):
     hotkey_changed = Signal(str)
@@ -929,7 +980,7 @@ class HotKeyButton(QPushButton):
 def has_something_changed(func):
     @wraps(func)
     def inner(self, *args, **kwargs):
-        self.change_detected = True
+        self.has_changes_made.emit()
 
         res =  func(self, *args, **kwargs)
 
@@ -943,11 +994,13 @@ class MainWindow(QMainWindow):
 
     orion_input = Signal(str, str)
     ui_current_status = Signal(int)
+    has_changes_made = Signal()
 
     def __init__(self, tts_func, ai_response_func, py_execution_func, cmd_execution_func, online_serach_func,
                  save_chat_history_func, save_memory_func, send_multiple_messages_func, record_audio_func,
                  transcript_audio_func, predict_activation_word_func, get_current_chat_history, get_current_memory,
-                 save_edited_memory_func, save_new_settings_func):
+                 save_edited_memory_func, save_new_settings_func, save_new_character_func, get_current_character_func,
+                 restart_app_func):
         # <editor-fold desc="GENEREL">
         super().__init__()
         self.toast_fade_in = None
@@ -972,6 +1025,8 @@ class MainWindow(QMainWindow):
             self.gui_setting = json.load(file)
 
         self.ui_sound_volume = self.gui_setting["ui_sounds"]
+
+        self.all_character_templates = os.listdir(rf"{self.working_dir}{self.gui_setting['character_templates']}")
         # </editor-fold>
 
         # <editor-fold desc="ALL IMPORTED FUNCTIONS">
@@ -993,6 +1048,11 @@ class MainWindow(QMainWindow):
         self.get_current_memory = get_current_memory
         self.save_edited_memory_func = save_edited_memory_func
         self.save_new_settings_func = save_new_settings_func
+
+        self.save_new_character_func = save_new_character_func
+        self.get_current_character_func = get_current_character_func
+
+        self.restart_app_func = restart_app_func
         # </editor-fold>
 
         # <editor-fold desc="UI SOUND FX">
@@ -1027,6 +1087,8 @@ class MainWindow(QMainWindow):
         # ui
         self.all_change_hotkey_buttons = []
 
+        self.restart_app_button = None
+
         self.ollama_version_drop_down = None
         self.gemini_version_drop_down = None
 
@@ -1043,8 +1105,11 @@ class MainWindow(QMainWindow):
         self.adaptive_volume_threashold = None
         self.adaptive_score_threashold = None
 
+        self.all_character_slider: dict = {}
+
         # settings
         self.change_detected = False
+        self.current_character = self.get_current_character_func()
         # </editor-fold>
 
         # <editor-fold desc="LAYOUT AND TABS">
@@ -1072,7 +1137,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.page_memory)
         self.stack.addWidget(self.page_settings)
 
-        self.stack.setCurrentIndex(3)
+        self.stack.setCurrentIndex(1)
         # </editor-fold>
 
         # <editor-fold desc="TAB BAR">
@@ -1136,6 +1201,7 @@ class MainWindow(QMainWindow):
         self.orion_execution.current_status.connect(self.on_status_changed)
         self.orion_execution.request_popup.connect(self.request_user)
         self.orion_execution.results.connect(self.process_execution_results)
+        self.orion_execution.has_conversation_ended.connect(self.update_end_of_conv)
         self.orion_execution.start()
 
         self.stt_thread = SpeachToText(
@@ -1152,7 +1218,7 @@ class MainWindow(QMainWindow):
 
         self.hotkey_listener = GlobalHotkeyListener()
         self.hotkey_listener.triggered.connect(self.hotkey_pressed)
-        self.hotkey_listener.start_listening()
+        self.hotkey_listener.start_listening(hotkey=self.gui_setting["push-to-talk"])
         # </editor-fold>
 
         # <editor-fold desc="WORKFLOW AND SIGNALS">
@@ -1164,6 +1230,7 @@ class MainWindow(QMainWindow):
         # connect signals
         self.orion_input.connect(self.process_orion_input)
         self.ui_current_status.connect(self.on_status_changed)
+        self.has_changes_made.connect(self.changes_has_made)
         # </editor-fold>
 
         # reload so no bugs happen
@@ -1254,6 +1321,15 @@ class MainWindow(QMainWindow):
 
                 layer3_grid.addWidget(self.orion_control_element, 2, 0, 1, 2)
 
+            elif self.orion_setting["speaking_recognition_mode"] == "smart":
+                self.orion_info_label.setText("Adaptives Gespräch")
+
+                self.orion_control_element = QLabel(f"Sprachaktivierung aktiv")
+                self.orion_control_element.setObjectName("input_lable")
+                self.orion_control_element.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                layer3_grid.addWidget(self.orion_control_element, 2, 0, 1, 2)
+
             else:
                 self.orion_info_label.setText("Adaptives zuhören aktiv")
         else:
@@ -1304,11 +1380,17 @@ class MainWindow(QMainWindow):
 
         self.all_text_bubbles = []
 
-        for chat_item in self.get_current_chat_history():
+        for index, chat_item in enumerate(self.get_current_chat_history()):
             new_item = TextBubble(chat_item, self)
             self.all_text_bubbles.append(new_item)
             if not init:
                 self.page_history_layout.addWidget(new_item)
+
+            if index == self.gui_setting["max_history_shown"]:
+                break
+
+        if not init:
+            QTimer.singleShot(20, lambda : self.page_history.verticalScrollBar().setValue( self.page_history.verticalScrollBar().maximum() ))
 
     def create_page_memory(self):
 
@@ -1331,6 +1413,7 @@ class MainWindow(QMainWindow):
         return scroll_area, layout
 
     def update_memory_entrys(self, init=False):
+
         if not init:
             for item in self.all_memory_bubbles:
                 self.page_memory_layout.removeWidget(item)
@@ -1349,7 +1432,7 @@ class MainWindow(QMainWindow):
                 self.page_memory_layout.addWidget(new_item)
 
         # add new memory button
-        new_item = QPushButton("Neue Erinnerung erstellen", self)
+        new_item = QPushButton(f"Neue Erinnerung erstelle", self)
         new_item.clicked.connect(lambda : self.edit_memorys("add_new", -1))
         new_item.setObjectName("new_memory_button")
 
@@ -1365,6 +1448,13 @@ class MainWindow(QMainWindow):
         page.setObjectName("settings_page")
         layout = QVBoxLayout(page)
 
+        self.restart_app_button = QPushButton("App neustarten um Änderungen zu übernehmen")
+        self.restart_app_button.setObjectName("restart_app_button")
+        self.restart_app_button.clicked.connect(self.restart_app)
+        self.restart_app_button.hide()
+
+        layout.addWidget(self.restart_app_button)
+
         # <editor-fold desc="AI PROVIDER">
         # AI PROVIDER
         ai_type_categorie = SettingsCategorie("KI Typ", max_colums=4)
@@ -1375,7 +1465,7 @@ class MainWindow(QMainWindow):
                                                               "gemini-3.5-flash", "gemini-3.5-flash-lite"])
 
         # set default
-        if self.orion_setting["llm_provider"] == "gemini":
+        if self.orion_setting["llm_provider"] == "google":
             ai_provider.select_option("Gemini (Cloud)")
             self.gemini_version_drop_down.select_option(self.orion_setting["llm_version"])
         else:
@@ -1656,6 +1746,37 @@ class MainWindow(QMainWindow):
         layout.addWidget(execution_categorie)
         # </editor-fold>
 
+        # <editor-fold desc="CHARACTER">
+        # character
+        character_categorie = SettingsCategorie("Charakteristik",len(self.all_character_templates))
+
+        self.all_character_slider = {}
+
+        for index, item in enumerate(list(self.current_character.keys())):
+            new_element = SettingsSlider(item, min_value=0, max_value=100, unit="%")
+            new_element.set_curent_value(int(self.current_character[item] * 100))
+            new_element.slider_value_changed.connect(lambda value, i=item: self.change_character(i, value / 100))
+            
+            character_categorie.add_new_widget(new_element, index, 0, 1, len(self.all_character_templates))
+
+            self.all_character_slider[item] = new_element
+
+        total_characters = len(self.current_character.keys())
+
+        title_lable = QLabel("Vorlagen")
+        title_lable.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        character_categorie.add_new_widget(QLabel(""), total_characters, 0, 1, len(self.all_character_templates))
+        character_categorie.add_new_widget(title_lable, total_characters + 1, 0, 1, len(self.all_character_templates))
+
+        for index, template in enumerate(self.all_character_templates):
+            template_text = template.replace(".json", "")
+            new_button = QPushButton(template_text)
+            new_button.clicked.connect(lambda _, t=template: self.set_character_template(t))
+            character_categorie.add_new_widget(new_button, total_characters + 2, index, 1, 1)
+
+        layout.addWidget(character_categorie)
+        # </editor-fold>
+
         # <editor-fold desc="GENERLL">
         # Generell
         genrell_categorie = SettingsCategorie("Allgemein", max_colums=4)
@@ -1802,8 +1923,9 @@ class MainWindow(QMainWindow):
     def on_status_changed(self, status: int):
         # stop speach
         if self.current_status == 0 and status != 0:
-            sd.stop(True)  # stop every current sd.play-output
-            self.home_animation_worker.rms_over_time([0], 0.5, 1)
+            if not self.orion_setting["speaking_recognition_mode"] == "smart":
+                sd.stop(True)  # stop every current sd.play-output
+                self.home_animation_worker.rms_over_time([0], 0.5, 1)
 
         self.active_on_status(status)
 
@@ -1855,6 +1977,10 @@ class MainWindow(QMainWindow):
             self.orion_info_label.setText("Warte aufs sprechen...")
             self.home_animation_worker.speed_over_time(5, 1)
         elif status == 6.2:
+            if self.orion_setting["speaking_recognition_mode"] == "smart":
+                sd.stop(True)  # stop every current sd.play-output
+                self.home_animation_worker.rms_over_time([0], 0.5, 1)
+
             self.orion_info_label.setText("Audio wird aufgenommen...")
             self.home_animation_worker.speed_over_time(5, 1)
         elif status == 6.3:
@@ -1885,6 +2011,9 @@ class MainWindow(QMainWindow):
         self.orion_execution.set_users_resonse(result)
 
     def process_execution_results(self, exec_results: list):
+        # update GUI
+        self.update_memory_entrys(init=False)
+        self.update_history_bubbles(init=False)
 
         if len(exec_results) > 0:
             self.orion_worklfow.feed_multiple_data(exec_results)
@@ -1893,9 +2022,12 @@ class MainWindow(QMainWindow):
 
     def hotkey_pressed(self, key):
         # manages all hot keys
-        if key == "F7":
+        if key == "push-to-talk":
             if self.orion_setting["use_stt"]:
                 self.stt_thread.start_recording()
+
+    def update_end_of_conv(self, value):
+        self.stt_thread.keep_conversation = not value
 
     # deactivate / activate ui elements
 
@@ -2032,13 +2164,21 @@ class MainWindow(QMainWindow):
 
     """SETTING CHANGE (EVENT ON SIGNAL)"""
 
+    def changes_has_made(self):
+        if self.change_detected:
+            return
+
+        self.change_detected = True
+        self.show_toast("Bitte das Programm neustarten um Änderungen zu übernehmen.", 10_000)
+        self.restart_app_button.show()
+
     def update_settings(self):
         self.save_new_settings_func(self.orion_setting)
 
     @has_something_changed
     def change_ai_provider(self, new_provider):
         if "gemini" in new_provider.lower():
-            self.orion_setting["llm_provider"] = "gemini"
+            self.orion_setting["llm_provider"] = "google"
             self.gemini_version_drop_down.select_option("gemini-3.5-flash-lite")
             self.change_llm_modell("gemini-3.5-flash-lite")
         elif "ollama" in new_provider.lower():
@@ -2172,7 +2312,6 @@ class MainWindow(QMainWindow):
             self.orion_setting["tavily_settings"]["exclude_domains"] = valid_values
         elif type_changed == "tts_and_stt_device":
             self.orion_setting["tts_and_stt_device"] = value.lower()
-        print(type_changed, value)
 
     def change_gui_settings(self, type_changed, value):
         if type_changed in ["orion_volume", "ui_sounds", "push-to-talk"]:
@@ -2185,6 +2324,31 @@ class MainWindow(QMainWindow):
         # save gui file
         with open(self.gui_settings_file, "w", encoding="utf-8") as f:
             json.dump(self.gui_setting, f, indent=4, ensure_ascii=False)
+
+    @has_something_changed
+    def change_character(self, type_changed, value):
+
+        self.current_character[type_changed] = value
+
+        self.save_new_character_func(self.current_character)
+
+    @has_something_changed
+    def set_character_template(self, template):
+        with open(rf"{self.working_dir}{self.gui_setting['character_templates']}{template}", "r", encoding="utf-8") as f:
+            new_character = json.load(f)
+
+        all_current_character_slider = list(self.all_character_slider.keys())
+        new_character_keys = list(new_character.keys())
+
+        for c in all_current_character_slider:
+            if c in new_character_keys:
+                self.all_character_slider[c].set_curent_value(new_character[c] * 100)
+
+        self.current_character = new_character
+        self.save_new_character_func(self.current_character)
+
+    def restart_app(self):
+        self.restart_app_func()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -2220,6 +2384,19 @@ if __name__ == "__main__":
         with open(rf"./assets/settings.json", "w", encoding="utf-8") as settings_file:
             json.dump(n_settings, settings_file, ensure_ascii=False, indent=4)
 
+    def get_character():
+        with open(rf"./assets/json_files/character_gemini.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+
+    def save_character(n_character):
+        with open(rf"./assets/json_files/character_gemini.json", "w", encoding="utf-8") as f:
+            json.dump(n_character, f, ensure_ascii=False, indent=4)
+
+    def restart_app():
+        QProcess.startDetached(sys.executable, sys.argv)
+        QApplication.quit()
+
     window = MainWindow(
         tts_func=tts_res,
         ai_response_func=ai_res,
@@ -2236,6 +2413,10 @@ if __name__ == "__main__":
         get_current_memory=get_memory,
         save_edited_memory_func=save_edited_memory,
         save_new_settings_func=save_new_settings,
+
+        save_new_character_func=save_character,
+        get_current_character_func=get_character,
+        restart_app_func = restart_app
     )
 
     window.showMaximized()

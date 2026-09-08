@@ -145,6 +145,8 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 #TextBubble #bubble_frame{
     background-color: #443DEF;
     border-radius: 20px;
+    min-width: 100px;
+    max-width: 1000px
 }
 #TextBubble[text_type="user"] #bubble_frame {
     background-color: #443DEF;
@@ -180,6 +182,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 #text-buble-content{
     font-size: 14px;
+    
 }
 #text-buble-time{
     font-size: 12px;
@@ -245,6 +248,20 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 
 
 /*SETTINGS*/
+#restart_app_button{
+    min-height: 50px;
+    border-radius: 25px;
+    background-color: #304F94;
+    font-weight: bold;
+    font-size: 14px;
+    border: 2px solid #3962BB;
+}
+
+#restart_app_button:hover{
+    background-color: rgba(47, 78, 148, 75%);
+    border: 2px solid rgba(56, 98, 187, 78%);
+}
+
 #settings_page{
     border-radius: 30px;
     background-color: transparent

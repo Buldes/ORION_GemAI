@@ -61,7 +61,8 @@ from supertonic import TTS
 import tempfile
 import subprocess
 import orion_gui
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QProcess
 from assets.ai_clients import google_gemini, ollama_llm
 
 class AgentOutput(BaseModel):
@@ -112,6 +113,10 @@ class ORION_GemAI:
         self.use_stt = False
         self.activation_sound = True
         self.send_history = False
+        self.send_memory = False
+        self.max_memorys: int = 0
+        self.max_history: int = 0
+
         self.end_of_conversation: bool = True
 
         # voice tts
@@ -241,6 +246,10 @@ class ORION_GemAI:
             self.llm_provider: str = all_settings["llm_provider"]
 
             self.send_history: bool = all_settings["send_history"]
+            self.send_memory: bool = all_settings["send_memory"]
+
+            self.max_memorys = all_settings["memory_max_items"]
+            self.max_history = all_settings["history_max_items"]
 
             self.auto_python_execution: bool = all_settings["auto_python_execution"]
             self.py_timeout = all_settings["python_timeout"]
@@ -304,7 +313,11 @@ class ORION_GemAI:
             get_current_chat_history = lambda : self.chat_history,
             get_current_memory= lambda : self.permanent_memory,
             save_edited_memory_func=self.save_edited_new_memory,
-            save_new_settings_func = self.save_new_settings
+            save_new_settings_func = self.save_new_settings,
+
+            save_new_character_func = self.LLM_client.save_character,
+            get_current_character_func = lambda : self.LLM_client.characteristics_dict,
+            restart_app_func = self.restart_app
         )
 
     """TTS"""
@@ -607,10 +620,10 @@ class ORION_GemAI:
 
         # add history
         if self.send_history and not no_history:
-            full_prompt += f"\nChat History: {self.chat_history}"
+            full_prompt += f"\nChat History: {self.chat_history[0:self.max_history]}"
 
-        if not no_memorys:
-            full_prompt += f"\nErinnerungen: {self.permanent_memory}"
+        if self.send_memory and not no_memorys:
+            full_prompt += f"\nErinnerungen: {self.permanent_memory[0:self.max_memorys]}"
 
         return full_prompt
 
@@ -631,9 +644,11 @@ class ORION_GemAI:
             self.total_promps += f"\n{f_p}"
             return None
         else:
-            final_prompt = self.total_promps + f"\nErinnerungen: {self.permanent_memory}"
+            final_prompt = self.total_promps
             if self.send_history:
-                final_prompt += f"\nChat History: {self.chat_history}"
+                final_prompt += f"\nChat History: {self.chat_history[0:self.max_history]}"
+            if self.send_memory:
+                final_prompt += f"\nErinnerungen: {self.permanent_memory[0:self.max_memorys]}"
             self.total_promps = ""
 
             return self.send_message(final_prompt, "Multiple", promp_is_full_prompt=True)
@@ -936,6 +951,10 @@ class ORION_GemAI:
             self.run_in_gui()
         else:
             self.output(f"Interface {self.execute_interface} not found.", "error")
+
+    def restart_app(self):
+        QProcess.startDetached(sys.executable, sys.argv)
+        QApplication.quit()
 
 if __name__ == '__main__':
     app = ORION_GemAI()

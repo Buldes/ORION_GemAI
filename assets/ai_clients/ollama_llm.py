@@ -118,10 +118,16 @@ class ollama_client:
                     "Zynismus": 0.5,
                     "Faulheit": 0.2
                 }
-                json.dump(default_obj, f, indent=4)
+                json.dump(default_obj, f, indent=4, ensure_ascii=False)
 
         with open(self.characteristics_json_files, "r", encoding="utf-8") as f:
             self.characteristics_dict = json.load(f)
+
+    def save_character(self, new_obj):
+        with open(self.characteristics_json_files, "w", encoding="utf-8") as f:
+            json.dump(new_obj, f, indent=4, ensure_ascii=False)
+
+        self.init_character()
 
     def send_message(self, full_prompt):
         try:
