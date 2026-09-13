@@ -1008,6 +1008,7 @@ class MainWindow(QMainWindow):
         self.all_microphones = self.get_input_devices()
 
         self.setWindowTitle("ORION GemAI")
+        self.setMinimumSize(900, 700)
 
         # style and path
         self.selected_style = "dark_blue"
@@ -1137,7 +1138,6 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.page_memory)
         self.stack.addWidget(self.page_settings)
 
-        self.stack.setCurrentIndex(1)
         # </editor-fold>
 
         # <editor-fold desc="TAB BAR">
@@ -1380,16 +1380,21 @@ class MainWindow(QMainWindow):
 
         self.all_text_bubbles = []
 
-        for index, chat_item in enumerate(self.get_current_chat_history()):
+        all_elements: list = self.get_current_chat_history()
+        all_elements.reverse()
+        for index, chat_item in enumerate(all_elements):
             new_item = TextBubble(chat_item, self)
             self.all_text_bubbles.append(new_item)
-            if not init:
-                self.page_history_layout.addWidget(new_item)
 
             if index == self.gui_setting["max_history_shown"]:
                 break
 
+
         if not init:
+            self.all_text_bubbles.reverse()
+            for element in self.all_text_bubbles:
+                    self.page_history_layout.addWidget(element)
+
             QTimer.singleShot(20, lambda : self.page_history.verticalScrollBar().setValue( self.page_history.verticalScrollBar().maximum() ))
 
     def create_page_memory(self):
@@ -1563,7 +1568,7 @@ class MainWindow(QMainWindow):
         manuel_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
         manuel_test_volume_buton.clicked.connect(self.open_volume_test)
 
-        self.manuel_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.manuel_volume_threashold = SettingsSlider("Lautstärke-Schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
         self.manuel_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
 
         manually_widget_layout.addWidget(self.manuel_silence_time_out_slider, 0, 0)
@@ -1575,7 +1580,7 @@ class MainWindow(QMainWindow):
         self.voice_silence_time_out_slider = SettingsSlider("Stille Time-Out", min_value=500, max_value=5_000, step_size=25, unit="ms")
         self.voice_silence_time_out_slider.slider_value_changed.connect(lambda value: self.change_audio_settings("SilenceTimeout", value / 1000))
 
-        self.voice_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.voice_volume_threashold = SettingsSlider("Lautstärke-Schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
         self.voice_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
 
         voice_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
@@ -1598,7 +1603,7 @@ class MainWindow(QMainWindow):
         self.adaptive_silence_time_out_slider = SettingsSlider("Stille Time-Out", min_value=500, max_value=5_000, step_size=25, unit="ms")
         self.adaptive_silence_time_out_slider.slider_value_changed.connect(lambda value: self.change_audio_settings("SilenceTimeout", value / 1000))
 
-        self.adaptive_volume_threashold = SettingsSlider("Lautstärke-schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
+        self.adaptive_volume_threashold = SettingsSlider("Lautstärke-Schwelle", min_value=10, max_value=7_000, step_size=50, unit="")
         self.adaptive_volume_threashold.slider_value_changed.connect(lambda value: self.change_audio_settings("threshold", value))
 
         adaptive_test_volume_buton  = QPushButton("Mikrofon-Lautstärke testen", self)
@@ -2190,7 +2195,7 @@ class MainWindow(QMainWindow):
 
     @has_something_changed
     def change_llm_modell(self, new_modell):
-        if self.orion_setting["llm_provider"] == "gemini" and "gemini" in new_modell.lower():
+        if self.orion_setting["llm_provider"] == "google" and "gemini" in new_modell.lower():
             self.orion_setting["llm_version"] = new_modell
         elif self.orion_setting["llm_provider"] == "ollama" and "gemini" not in new_modell.lower():
             self.orion_setting["llm_version"] = new_modell
@@ -2419,6 +2424,6 @@ if __name__ == "__main__":
         restart_app_func = restart_app
     )
 
-    window.showMaximized()
+    window.show()
 
     sys.exit(app.exec())

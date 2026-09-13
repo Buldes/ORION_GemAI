@@ -620,10 +620,14 @@ class ORION_GemAI:
 
         # add history
         if self.send_history and not no_history:
+            self.chat_history.reverse()
             full_prompt += f"\nChat History: {self.chat_history[0:self.max_history]}"
+            self.chat_history.reverse()
 
         if self.send_memory and not no_memorys:
+            self.permanent_memory.reverse()
             full_prompt += f"\nErinnerungen: {self.permanent_memory[0:self.max_memorys]}"
+            self.permanent_memory.reverse()
 
         return full_prompt
 
@@ -646,9 +650,13 @@ class ORION_GemAI:
         else:
             final_prompt = self.total_promps
             if self.send_history:
+                self.chat_history.reverse()
                 final_prompt += f"\nChat History: {self.chat_history[0:self.max_history]}"
+                self.chat_history.reverse()
             if self.send_memory:
+                self.permanent_memory.reverse()
                 final_prompt += f"\nErinnerungen: {self.permanent_memory[0:self.max_memorys]}"
+                self.permanent_memory.reverse()
             self.total_promps = ""
 
             return self.send_message(final_prompt, "Multiple", promp_is_full_prompt=True)
