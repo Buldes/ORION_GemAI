@@ -152,3 +152,63 @@ Alles für ``./assets/gui/gui_settings.json``
 | voice_test_sentences | list[str] | -                            | *beliebig*          | Sätze die verwendet werden, um die Stimme zu testen.                               |
 | character_templates  | str       | -                            | *Pfad als string*   | Der Ordner mit allen Chracter-Vorlagen.                                            |
 | max_history_shown    | int       | -                            | -1 *bis* ∞          | Die Anzahl an Elementen, die im GUI-Interface unter ``Historie`` angezeigt werden. |
+
+
+
+## 🛠 Requirements & Abhängigkeiten
+
+### 1. System-Voraussetzungen
+
+* **Python:** 3.10 oder höher
+* **NVIDIA CUDA Toolkit & cuDNN:** Erforderlich für die GPU-Beschleunigung von STT und TTS (über ONNX Runtime & Faster-Whisper).
+* **Linux-Hinweis:** Das Modul `keyboard` benötigt unter Linux Superuser-Rechte (`sudo`).
+
+
+
+### 2. Externe Dienste & APIs
+
+* [Ollama](https://ollama.com/): Muss lokal installiert sein und im Hintergrund laufen.
+* [Google Gemini API Key](https://aistudio.google.com/): Für Anfragen an das Gemini-Modell.
+* [Tavily API Key](https://tavily.com/): Für die Echtzeit-Websuche.
+
+
+
+### 3. Übersichtsliste der Abhängigkeiten:
+
+- **GUI Framework:**
+  
+  - [PySide6](https://pypi.org/project/PySide6/) – Qt6-Oberfläche und Multimedia-Wiedergabe
+
+- **Audio & Hardware:**
+  
+  - [soundfile](https://pypi.org/project/soundfile/) – Lesen und Schreiben von Audio-Dateien
+  
+  - [sounddevice](https://pypi.org/project/sounddevice/) – Audio-Aufnahme (Mikrofon) und -Ausgabe (Lautsprecher)
+  
+  - [numpy](https://numpy.org/) – Numerische Verarbeitung der Audio-Streams
+  
+  - [keyboard](https://pypi.org/project/keyboard/) – Erkennung globaler Tastatureingaben
+
+- **KI & Machine Learning:**
+  
+  - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) – Schnelle lokale Speech-to-Text (STT) Transkription
+  
+  - [openwakeword](https://www.google.com/search?q=https://github.com/dscripka/openwakeword) – Lokale Wake-Word-Erkennung
+  
+  - [supertonic](https://www.google.com/search?q=https://github.com/supertonic-ai/supertonic) – Text-to-Speech (TTS) Synthese
+  
+  - [onnxruntime-gpu](https://onnxruntime.ai/) – Inferenz-Engine für ML-Modelle mit CUDA-Unterstützung
+  
+  - [pydantic](https://www.google.com/search?q=https://docs.pydantic.dev/) – Datenvalidierung und Datenmodelle
+
+- **Tools & API-Clients:**
+  
+  - [tavily-python](https://pypi.org/project/tavily-python/) – Offizieller Python-Client für die Tavily-Such-API
+  
+  - [rich](https://github.com/Textualize/rich) – Formatierte Konsolenausgaben
+
+### 4. Lokale Modelle & Assets
+
+- **Custom Wake Word Model:** Es wird ein eigens trainiertes `openwakeword`-Modell verwendet.
+
+- **Supertonic TTS Weights:** Die lokal gespeicherten Supertonic-Falldateien/Gewichte sind im angegebenen Assets-Pfad bereitgelegt.
