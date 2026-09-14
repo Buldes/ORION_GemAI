@@ -153,8 +153,6 @@ Alles für ``./assets/gui/gui_settings.json``
 | character_templates  | str       | -                            | *Pfad als string*   | Der Ordner mit allen Chracter-Vorlagen.                                            |
 | max_history_shown    | int       | -                            | -1 *bis* ∞          | Die Anzahl an Elementen, die im GUI-Interface unter ``Historie`` angezeigt werden. |
 
-
-
 ## 🛠 Requirements & Abhängigkeiten
 
 ### 1. System-Voraussetzungen
@@ -163,15 +161,11 @@ Alles für ``./assets/gui/gui_settings.json``
 * **NVIDIA CUDA Toolkit & cuDNN:** Erforderlich für die GPU-Beschleunigung von STT und TTS (über ONNX Runtime & Faster-Whisper).
 * **Linux-Hinweis:** Das Modul `keyboard` benötigt unter Linux Superuser-Rechte (`sudo`).
 
-
-
 ### 2. Externe Dienste & APIs
 
 * [Ollama](https://ollama.com/): Muss lokal installiert sein und im Hintergrund laufen.
 * [Google Gemini API Key](https://aistudio.google.com/): Für Anfragen an das Gemini-Modell.
 * [Tavily API Key](https://tavily.com/): Für die Echtzeit-Websuche.
-
-
 
 ### 3. Übersichtsliste der Abhängigkeiten:
 
@@ -212,3 +206,18 @@ Alles für ``./assets/gui/gui_settings.json``
 - **Custom Wake Word Model:** Es wird ein eigens trainiertes `openwakeword`-Modell verwendet.
 
 - **Supertonic TTS Weights:** Die lokal gespeicherten Supertonic-Falldateien/Gewichte sind im angegebenen Assets-Pfad bereitgelegt.
+
+## Bilder und Beispiele
+
+<!--
+Source - https://stackoverflow.com/a/41912122
+Posted by Philipp Schwarz, modified by community. See post 'Timeline' for change history
+Retrieved 2026-09-14, License - CC BY-SA 4.0
+-->
+
+![Lade...](./assets/examples/images/HOME-Voice.png)
+![Lade...](./assets/examples/images/HOME-text.png)
+![Lade...](./assets/examples/images/HISTORIE.png)
+![Lade...](./assets/examples/images/ERINNERUNGEN.png)
+![Lade...](./assets/examples/images/EINSTELLUNGEN-1.png)
+![Lade...](./assets/examples/images/EINSTELLUNGEN-2.png)
