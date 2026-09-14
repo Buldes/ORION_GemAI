@@ -293,6 +293,10 @@ class ORION_GemAI:
     def init_gui(self):
         self.output("Init GUI...", "log")
 
+        if not self.all_settings["use_tts"]:
+            self.output(f"TTS is not enabled and will be enabled automaticly.", "warn")
+            self.init_tts()
+
         self.pyside_app = QApplication(sys.argv)
         self.gui_class = orion_gui.MainWindow(
             ai_response_func=self.send_message,
