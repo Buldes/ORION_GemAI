@@ -218,7 +218,6 @@ class OrionExecution(QThread):
                 all_keys = list(self.data.keys())
                 self.all_results = []
 
-                # chat history
                 if "error" in all_keys:
                     if self.data["error"] == "RESOURCE_EXHAUSTED":
                         self.current_status.emit(7.1)
@@ -296,6 +295,9 @@ class OrionExecution(QThread):
                 else:
                     self.has_conversation_ended.emit(False)
 
+                if "further_process" in all_keys and False: # currently deactivated, because sometimes AI gets stuck in Loop
+                    if not self.check_if_empty(self.data["further_process"]):
+                        self.all_results.append(["further_process", self.data["further_process"]])
 
                 # send results
                 self.check_executions = False
@@ -556,6 +558,7 @@ class GlobalHotkeyListener(QObject):
 class TextBubble(QWidget):
     def __init__(self, text_data, parent=None):
         super(TextBubble, self).__init__(parent)
+
 
         self.setProperty("text_type", text_data["role"])
         self.setObjectName("TextBubble")
@@ -1782,7 +1785,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(character_categorie)
         # </editor-fold>
 
-        # <editor-fold desc="GENERLL">
+        # <editor-fold desc="GENERELL">
         # Generell
         genrell_categorie = SettingsCategorie("Allgemein", max_colums=4)
 
@@ -1811,6 +1814,9 @@ class MainWindow(QMainWindow):
         added_ai_role_input.setText(self.orion_setting["added_ai_role"])
         added_ai_role_input.editingFinished.connect(lambda : self.change_execution("added_ai_role", added_ai_role_input.text()))
 
+        clear_memory_btn = QPushButton("Erinnerungen säubern")
+        clear_memory_btn.pressed.connect(self.clean_memory)
+        clear_memory_btn.setToolTip("Das aktive LLM-Modell säubert die Erinnerungen eigenständig, indem Inhalte zusammengefasst werden und unrelevante Informationen entfernt werden.")
 
         genrell_categorie.add_new_widget(ai_volume_slider, 0, 0, 1, 2)
         genrell_categorie.add_new_widget(ui_volume_slider, 0, 2, 1, 2)
@@ -1823,6 +1829,9 @@ class MainWindow(QMainWindow):
 
         genrell_categorie.add_new_widget(QLabel("KI-Anweisung"), 3, 0, 1, 1)
         genrell_categorie.add_new_widget(added_ai_role_input, 3, 1, 1, 3)
+
+
+        genrell_categorie.add_new_widget(clear_memory_btn, 4, 0, 1, 4)
 
         layout.addWidget(genrell_categorie)
         # </editor-fold>
@@ -2351,6 +2360,16 @@ class MainWindow(QMainWindow):
 
         self.current_character = new_character
         self.save_new_character_func(self.current_character)
+
+    def clean_memory(self):
+        self.orion_input.emit("Der Nutzer möchte, dass du deine Erinnerungen aufräumst. "
+                              "Dies bedeutet: Lese die Datei und fasse den gesammten inhalt in möglichst wenig Elementen zusammen. "
+                              "Nutze kein Test sondern nur Stichpunkte. "
+                              "Behalte nur das wichtigste und entferne alles andere."
+                              "Anschließend speicherst du die aufgeräumten Erinnerungen ab und überschreibst somit die alten."
+                              "Der Aufbau MUSS dabei gleich bleiben."
+                              "Beachte beim abspeichern double quotes zu verwenden und auf garkeine Fall einzelne.",
+                              "system")
 
     def restart_app(self):
         self.restart_app_func()

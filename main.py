@@ -311,7 +311,7 @@ class ORION_GemAI:
 
             predict_activation_word_func = self.predict_activation_word,
             get_current_chat_history = lambda : self.chat_history,
-            get_current_memory= lambda : self.permanent_memory,
+            get_current_memory= self.get_and_reload_memory,
             save_edited_memory_func=self.save_edited_new_memory,
             save_new_settings_func = self.save_new_settings,
 
@@ -691,6 +691,8 @@ class ORION_GemAI:
     def save_chat_history(self, n_chat, role):
         self.output("Saving new Chat History", "log")
 
+        self.load_chat_history()
+
         self.chat_history.append({"time": self.get_current_timestamp(), "content":n_chat, "role":role})
         with open(self.chat_history_file, "w", encoding="utf-8") as f:
             json.dump(self.chat_history, f, indent=4, ensure_ascii=False)
@@ -708,6 +710,10 @@ class ORION_GemAI:
         with open(self.settings_file, "w", encoding="utf-8") as f:
             json.dump(new_settings, f, indent=4, ensure_ascii=False)
         self.load_settings()
+
+    def get_and_reload_memory(self):
+        self.load_memory()
+        return self.permanent_memory
 
     """ONLINE SEARCH"""
 

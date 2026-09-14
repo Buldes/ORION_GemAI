@@ -9,7 +9,7 @@
     "allow_python_execution": true,
     "auto_python_execution": false,
     "python_timeout": 60,
-    "use_stt": false,
+    "use_stt": true,
     "oww_settings": {
         "InitialSilenceTimeout": 10,
         "SilenceTimeout": 2.0,
@@ -35,7 +35,7 @@
         "Anwesend.",
         "Wie kann ich helfen?"
     ],
-    "speaking_recognition_mode": "manually",
+    "speaking_recognition_mode": "voice",
     "whisper_model": "turbo",
     "use_tts": true,
     "tts_voice": "M1",
