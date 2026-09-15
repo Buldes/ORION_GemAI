@@ -2,7 +2,7 @@
 
 ## EN Notice
 
-Currently, the GUI Interface only supports german. You can still change the TTS Model to English by adding ```You MUST response in English.``` in ```./assets/settings.json > added_ai_role```.
+Currently, the GUI Interface only supports german. You can still change the TTS Model to English by adding ```You MUST respond in English.``` in ```./assets/settings.json > added_ai_role```.
 
 ## Überblick
 
@@ -10,11 +10,11 @@ Orion ist ein lokaler KI Assistent, der sich von anderen unterscheidet. Er entsc
 
 Python Ausführung verbieten, automatisieren oder doch erst nach einer Bestätigung erlauben? 
 Seriös, analytisch, kreativ oder doch eine ( lustig beleidigende :) ) humorvolle KI?
-Allwissend oder doch lieber garnichts wissen? - Egal wie du sie haben möchtest, du entscheidest es. 
+Allwissend oder doch lieber gar nichts wissen? - Egal wie du sie haben möchtest, du entscheidest es. 
 
-Und das beste: Du entscheidest selbst welches KI-Modell du verwenden möchtest. Lieber Gemini 3.5 Flasch oder Gemini 3.7 Pro? Oder vielleicht doch llama3.1 für lokale KI Kontrolle?
+Und das beste: Du entscheidest selbst welches KI-Modell du verwenden möchtest. Lieber Gemini 3.5 Flashoder Gemini 3.7 Pro? Oder vielleicht doch llama3.1 für lokale KI Kontrolle?
 
-Aber keine Sorge: Die Einstellungen sind simple gehalten. Du kannst die Standardeinstellung nutzen, zwischen vorgefertigten Persönlichkeiten wechseln oder ALLES selbst entscheiden. 
+Aber keine Sorge: Die Einstellungen sind simpel gehalten. Du kannst die Standardeinstellung nutzen, zwischen vorgefertigten Persönlichkeiten wechseln oder ALLES selbst entscheiden. 
 
 ## Alle KI-Modelle
 
@@ -27,14 +27,14 @@ Orion nutzt sowohl lokale, als auch cloud basierte KI-Modelle
 - **Tavily**
   - Da der Gratis-Plan von Gemini keine eingebaute Online-Suche erlaubt, wird alternativ Tavily verwendet, um trotzdem ein Online-Such-Feature zu ermöglichen
 
-> **Beachte:** Um die Cloud-Modell verwenden zu könne, müssen die API-Keys vorher in die Datei ```./api_key.json``` eingegeben werden. Falls die Datei nicht vorhanden sein solte, kannst du sie manuell erstellen. Nutze folgenden Aufbau: { "gemini": "KEY", "tavily": "KEY"}
+> **Beachte:** Um die Cloud-Modell verwenden zu können, müssen die API-Keys vorher in die Datei ```./api_key.json``` eingegeben werden. Falls die Datei nicht vorhanden sein solte, kannst du sie manuell erstellen. Nutze folgenden Aufbau: { "gemini": "KEY", "tavily": "KEY"}
 
 ### Lokal
 
 - **Supertonic - TTS**
   
   - Das TTS-Modell um eine Sprachaugabe zu ermöglichen. 
-  - **Beachte:** Supertonic wird offiziell nicht mehr unterstützt. Aus diesem Grund wurden die nötigen Datein direkt in das Projektverzeichniss kopiert
+  - **Beachte:** Supertonic wird offiziell nicht mehr unterstützt. Aus diesem Grund wurden die nötigen Dateien direkt in das Projektverzeichnis kopiert
 
 - **WhisperModel - STT**
   
@@ -44,7 +44,7 @@ Orion nutzt sowohl lokale, als auch cloud basierte KI-Modelle
   
   - Ermöglicht die Sprachaktivierung.
 
-> **Beachte:** Die Lizenzen und GitHub Repos findest du unter *Lizenzen*
+> **Beachte:** Die Lizenzen und GitHub Repos findest du unter *Requirements & Abhängigkeiten*
 
 ## Setup
 
@@ -117,9 +117,9 @@ Alles für ``./assets/settings.json``
 | oww_settings > InitialSilenceTimeout | float     | -                                    | *beliebig*                              | Wenn der Sprachinput aktiv ist, wird erst gewartet, bevor die eigentliche Aufnahme startet. Vergeht diese Zeit in Sekunden ohne, dass etwas erkannt wurde, wird die Aufnahme abgebrochen.                                     |
 | oww_settings > SilenceTimeout        | float     | Stille  Time-Out                     | *beliebig*                              | Die Sprachaufnahme endet automatisch, sobald X-sekunden lang die Lautstärke-Schwelle nicht erreicht wird.                                                                                                                     |
 | oww_settings > threshold             | int       | Lautstärke-Schwelle                  | *beliebig*                              | Die Lautstärke, ab der der Audio-Input nicht mehr als Still zählt.                                                                                                                                                            |
-| oww_settings > score_threshold       | float     | Spracherkennung Scroe-Schwelle       | 0.0 *bis* 1.0                           | Der mindest Score der erreicht werden muss, damit die SPrachaktivierung triggert.                                                                                                                                             |
+| oww_settings > score_threshold       | float     | Spracherkennung Score-Schwelle       | 0.0 *bis* 1.0                           | Der mindest Score der erreicht werden muss, damit die Sprachaktivierung triggert.                                                                                                                                             |
 | activation_sound                     | bool      | -                                    | true *oder* false                       | (*Nur Konsole*) Aktivierungs-Sound wenn die Sprachaktivierung triggert.                                                                                                                                                       |
-| active_words                         | list[str] | -                                    | *beliebig*                              | (*Nur Konsole*) Kurze Sätze, die ls Aktivierungs-Sound gesagt werden                                                                                                                                                          |
+| active_words                         | list[str] | -                                    | *beliebig*                              | (*Nur Konsole*) Kurze Sätze, die als Aktivierungs-Sound gesagt werden                                                                                                                                                         |
 | speaking_recognition_mode            | str       | Input Variante                       | smart; voice; manually                  | Die Art und Weise, wie der Audio-Input angewendet werden soll. Push-To-Talk, Sprachaktivierung oder Adaptive Gespräche. Bei den adaptiven Gesprächen entscheidet das LLM selbst, ob sie dir direkt weiter zuhört, oder nicht. |
 | whisper_model                        | str       | -                                    | tiny; base; small; medium; large; turbo | Die STT-Modell größe.                                                                                                                                                                                                         |
 | use_tts                              | bool      | -                                    | true *oder* false                       | Entscheidet, ob die LLM-Ausgabe per TTS-Modell als Audio ausgegeben werden soll.                                                                                                                                              |
@@ -129,14 +129,14 @@ Alles für ``./assets/settings.json``
 | tts_and_stt_device                   | str       | Datenverarbeitung über               | cpu *oder* gpu                          | Entscheidet, ob das STT-Modell und das TTS-Modell über cpu oder gpu laufen soll. Die GPU-Nutzung muss zuvor eingerichtet werden. Siehe dafür ``Setup für GPU Nutzung``                                                        |
 | allow_tavily_search                  | bool      | Online Suchanfrage                   | true *oder* false                       | Erlaube oder Verbiete der KI das Online-Suche Feature.                                                                                                                                                                        |
 | tavily_settings > search_depth       | str       | Suchtiefe                            | basic *oder* advanced                   | Tiefere, dafür längere Suche oder schnelle, dafür ungenauere Suche.                                                                                                                                                           |
-| tavily_settings > max_results        | str       | -                                    | *Zahl* 1 *bis* 20 *als string*          | Anzahl der Ergebnisse. EIne höhere Zahl führt zu einem genaueren Ergebniss, dafür jedoch auch für                                                                                                                             |
+| tavily_settings > max_results        | int       | -                                    | 1 *bis* 20                              | Anzahl der Ergebnisse. EIne höhere Zahl führt zu einem genaueren Ergebnis, dafür jedoch auch für                                                                                                                              |
 | tavily_settings > exclude_domains    | list[str] | Domain-Blacklist                     | *beliebig*                              | Domains, die bei der Online-Suche ignoriert werden.                                                                                                                                                                           |
 | tavily_settings > topic              | str       | -                                    | general; news; finance                  | Spezifiziert das Ober-Thema                                                                                                                                                                                                   |
 | tavily_settings > time_range         | str/None  | -                                    | day; week; month; year; None            | Das maximale Alter der Ergebnisse.                                                                                                                                                                                            |
 | tavily_settings > auto_parameters    | bool      | -                                    | true *oder* false                       | Setzt alle Parameter automatisch.                                                                                                                                                                                             |
-| allow_cmd_execution                  | bool      | CMD-Ausführung                       | true *oder* false                       | Erlaube oder verbiete die Ausführung con CMD-Befehlen.                                                                                                                                                                        |
+| allow_cmd_execution                  | bool      | CMD-Ausführung                       | true *oder* false                       | Erlaube oder verbiete die Ausführung von CMD-Befehlen.                                                                                                                                                                        |
 | auto_cmd_execution                   | bool      | CMD-Ausführung                       | true *oder* false                       | Entscheide, ob die CMD-Befehle automatisch ausgeführt werden oder erst nach Bestätigung.                                                                                                                                      |
-| cmd_blacklist                        | list[str] | CMD-Clacklist                        | *beliebig*                              | Blockt die Ausführung wenn einer der Elemente im Befehl erkant werden.                                                                                                                                                        |
+| cmd_blacklist                        | list[str] | CMD-Blacklist                        | *beliebig*                              | Blockt die Ausführung wenn einer der Elemente im Befehl erkant werden.                                                                                                                                                        |
 | cmd_timeout                          | float     | CMD Time-Out                         | *beliebig*                              | Die maximale Zeit, die eine CMD-Ausführung besetzen darf.                                                                                                                                                                     |
 | cuda_dir                             | str       | Cuda Pfad                            | *pfad als string*                       | Der Pfad zum CUDA-Ordner.                                                                                                                                                                                                     |
 | added_ai_role                        | str       | KI-Anweisung                         | *beliebig*                              | Füge eine Anweisung für das LLM Modell nach belieben zu.                                                                                                                                                                      |
@@ -187,13 +187,13 @@ Alles für ``./assets/gui/gui_settings.json``
   
   - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) – Schnelle lokale Speech-to-Text (STT) Transkription
   
-  - [openwakeword](https://www.google.com/search?q=https://github.com/dscripka/openwakeword) – Lokale Wake-Word-Erkennung
+  - [openwakeword](https://github.com/dscripka/openwakeword) – Lokale Wake-Word-Erkennung
   
-  - [supertonic](https://www.google.com/search?q=https://github.com/supertonic-ai/supertonic) – Text-to-Speech (TTS) Synthese
+  - [supertonic](https://github.com/supertone-oss-archive/supertonic) – Text-to-Speech (TTS) Synthese
   
   - [onnxruntime-gpu](https://onnxruntime.ai/) – Inferenz-Engine für ML-Modelle mit CUDA-Unterstützung
   
-  - [pydantic](https://www.google.com/search?q=https://docs.pydantic.dev/) – Datenvalidierung und Datenmodelle
+  - [pydantic](https://docs.pydantic.dev/) – Datenvalidierung und Datenmodelle
 
 - **Tools & API-Clients:**
   

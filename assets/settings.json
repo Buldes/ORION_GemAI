@@ -47,7 +47,7 @@
     "allow_tavily_search": true,
     "tavily_settings": {
         "search_depth": "advanced",
-        "max_results": "3",
+        "max_results": 3,
         "exclude_domains": [
             "bild.de"
         ],
