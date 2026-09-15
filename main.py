@@ -1,6 +1,11 @@
+
+import ctypes
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
 import json
 import os
 import sys
+import ctypes
+from PySide6.QtGui import QIcon
 
 with open(r"./assets/settings.json", "r", encoding="utf-8") as file:
     settings = json.load(file)
@@ -293,11 +298,16 @@ class ORION_GemAI:
     def init_gui(self):
         self.output("Init GUI...", "log")
 
+        if sys.platform == "win32":
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
+
         if not self.all_settings["use_tts"]:
             self.output(f"TTS is not enabled and will be enabled automaticly.", "warn")
             self.init_tts()
 
         self.pyside_app = QApplication(sys.argv)
+        self.pyside_app.setWindowIcon(QIcon(rf"{self.working_dir}/assets/icon/icon.ico"))
+
         self.gui_class = orion_gui.MainWindow(
             ai_response_func=self.send_message,
             tts_func=lambda text, specific_voice_style: self.tts_say_text(text, deactivate_palyback_worker=True, return_wave=True, specific_voice_style=specific_voice_style),

@@ -1,4 +1,5 @@
 import math
+import ctypes
 import random
 import sys
 import os
@@ -11,7 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QGraphicsOpacityEffect, QPlainTextEdit, QScrollArea, QFrame, QComboBox, QCheckBox,
     QSlider, QDialog, QProgressBar, QSizePolicy
 )
-from PySide6.QtGui import QFontDatabase, QFont, Qt, QFontMetrics, QKeySequence
+from PySide6.QtGui import QFontDatabase, QFont, Qt, QFontMetrics, QKeySequence, QIcon
 from PySide6.QtMultimedia import QSoundEffect
 import json
 import soundfile as sf
@@ -1010,13 +1011,16 @@ class MainWindow(QMainWindow):
         self._active_toast = None
         self.all_microphones = self.get_input_devices()
 
-        self.setWindowTitle("ORION GemAI")
-        self.setMinimumSize(900, 700)
 
         # style and path
         self.selected_style = "dark_blue"
         self.selected_font = ["Montserrat", "Montserrat-Regular"]
         self.working_dir: str = os.path.abspath("./")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
+        self.setWindowIcon(QIcon(rf"{self.working_dir}/assets/icon/icon.ico"))
+        self.setWindowTitle("ORION GemAI")
+        self.setMinimumSize(900, 700)
+
         self.apply_style()
 
         # orion and gui settings
