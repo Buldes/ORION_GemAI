@@ -1,4 +1,4 @@
-<img title="" src="file:///D:/PythonProjects/ORION_GemAI/assets/icon/icon.png" alt="" data-align="center">
+<img title="" src="./assets/icon/icon.png" alt="" data-align="center">
 
 # ORION_GemAI
 
