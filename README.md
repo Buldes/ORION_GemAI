@@ -1,4 +1,7 @@
-<img title="" src="./assets/icon/icon.png" alt="" data-align="center">
+
+<p align="center">
+  <img title="" src="./assets/icon/icon.png" alt="" data-align="center" style="display: flex justify-content: center">
+</p>
 
 # ORION_GemAI
 
