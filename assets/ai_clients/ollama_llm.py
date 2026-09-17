@@ -1,8 +1,16 @@
 from pydantic import BaseModel, Field
-from typing import Literal
 import json
 import os
 import ollama
+import sys
+
+def get_asset_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
 
 class AgentOutput(BaseModel):
     further_process: str = Field(description="Interne Denkprozesse oder Erkärungen vor/während Code-Ausführungen.")
@@ -21,7 +29,7 @@ class ollama_client:
         self.output = output_func
 
         # all files
-        self.working_dir: str = os.path.abspath("./")
+        self.working_dir = get_asset_path("")
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
         self.json_files: str = rf"{self.working_dir}/assets/json_files/"
         self.chat_history = []

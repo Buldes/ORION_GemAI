@@ -4,6 +4,15 @@ from google.genai import types
 from pydantic import BaseModel
 import os
 import json
+import sys
+
+def get_asset_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
 
 class AgentOutput(BaseModel):
     further_process: str
@@ -22,7 +31,7 @@ class GeminiLLM:
         self.output = output_func
 
         # all files
-        self.working_dir: str = os.path.abspath("./")
+        self.working_dir = get_asset_path("../..")
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
         self.json_files: str = rf"{self.working_dir}/assets/json_files/"
         self.chat_history = []
@@ -137,6 +146,9 @@ class GeminiLLM:
 
     def init_api_key(self):
         self.output("Reading Gemini API Key...", "log")
+        if not os.path.exists(self.api_key_file):
+            with open(self.api_key_file, "w", encoding="utf-8") as f:
+                json.dump({"gemini": "", "tavily": ""}, f, indent=4, ensure_ascii=False)
         with open(self.api_key_file, "r") as f:
             all_keys = json.load(f)
             self.gemini_api_key = all_keys["gemini"]
@@ -161,6 +173,8 @@ class GeminiLLM:
             if e.status == "RESOURCE_EXHAUSTED":
                 self.output("RESOURCE_EXHAUSTED on Gemini API", "warn")
                 return {"error": "RESOURCE_EXHAUSTED", "further_process": "", "content": "Achtung: Du hast dein Limit deiner API erreicht. Du kannst somit derzeit nicht mit mir weiter sprechen oder schreiben. Bitte versuche es später erneut.", "memory": "", "pythonCode": "", "online_search": "", "cmd_execution": "", "summary":""}
+            elif e.status == "UNAUTHENTICATED":
+                return {"error": e.status, "further_process": "", "content": "Dein API Key ist ungültig oder noch nicht eingetragen. Bitte trage ihn in den Einstellungen ein und starte das Programm neu.", "memory": "", "pythonCode": "" }
             else:
                 self.output(f"Something went wrong  on Gemini API: {e}", "error")
                 return {"error": e.status, "further_process": "", "content": "Es ist ein Fehler aufgetreten.", "memory": "", "pythonCode": "" }

@@ -21,7 +21,15 @@ import numpy as np
 import keyboard
 from datetime import datetime
 from functools import wraps
+from pathlib import Path
 
+def get_asset_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
 
 class HomeAnimation(QThread):
     angle_changed = Signal(list)
@@ -1011,11 +1019,11 @@ class MainWindow(QMainWindow):
         self._active_toast = None
         self.all_microphones = self.get_input_devices()
 
+        self.working_dir = get_asset_path("")
 
         # style and path
         self.selected_style = "dark_blue"
         self.selected_font = ["Montserrat", "Montserrat-Regular"]
-        self.working_dir: str = os.path.abspath("./")
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
         self.setWindowIcon(QIcon(rf"{self.working_dir}/assets/icon/icon.ico"))
         self.setWindowTitle("ORION GemAI")
@@ -1026,11 +1034,20 @@ class MainWindow(QMainWindow):
         # orion and gui settings
         self.orion_setting_file: str = rf"{self.working_dir}/assets/settings.json"
         self.gui_settings_file: str = rf"{self.working_dir}/assets/gui/gui_settings.json"
+        self.api_keys_file = rf"{self.working_dir}/api_key.json"
 
         with open(self.orion_setting_file, "r", encoding="utf-8") as file:
             self.orion_setting = json.load(file)
         with open(self.gui_settings_file, "r", encoding="utf-8") as file:
             self.gui_setting = json.load(file)
+
+        if not os.path.exists(self.api_keys_file):
+            self.api_keys = {"gemini": "", "tavily": ""}
+            with open(self.api_keys_file, "w", encoding="utf-8") as file:
+                json.dump(self.api_keys, file, indent=4, ensure_ascii=False)
+        else:
+            with open(self.api_keys_file, "r", encoding="utf-8") as file:
+                self.api_keys = json.load(file)
 
         self.ui_sound_volume = self.gui_setting["ui_sounds"]
 
@@ -1822,6 +1839,16 @@ class MainWindow(QMainWindow):
         clear_memory_btn.pressed.connect(self.clean_memory)
         clear_memory_btn.setToolTip("Das aktive LLM-Modell säubert die Erinnerungen eigenständig, indem Inhalte zusammengefasst werden und unrelevante Informationen entfernt werden.")
 
+        key_gemini_input = QLineEdit(self)
+        key_gemini_input.setPlaceholderText("API-Key eingeben...")
+        key_gemini_input.setText(self.api_keys["gemini"])
+        key_gemini_input.editingFinished.connect(lambda : self.save_new_api_key(key_gemini_input.text(), "gemini"))
+
+        key_tavily_input = QLineEdit(self)
+        key_tavily_input.setPlaceholderText("API-Key eingeben...")
+        key_tavily_input.setText(self.api_keys["tavily"])
+        key_tavily_input.editingFinished.connect(lambda : self.save_new_api_key(key_tavily_input.text(), "tavily"))
+
         genrell_categorie.add_new_widget(ai_volume_slider, 0, 0, 1, 2)
         genrell_categorie.add_new_widget(ui_volume_slider, 0, 2, 1, 2)
 
@@ -1830,12 +1857,17 @@ class MainWindow(QMainWindow):
         genrell_categorie.add_new_widget(QLabel("Cuda Pfad"), 2, 0, 1, 1)
         genrell_categorie.add_new_widget(cuda_dir_input, 2, 1, 1, 3)
 
-
         genrell_categorie.add_new_widget(QLabel("KI-Anweisung"), 3, 0, 1, 1)
         genrell_categorie.add_new_widget(added_ai_role_input, 3, 1, 1, 3)
 
+        genrell_categorie.add_new_widget(QLabel("Gemini API-Key"), 4, 0, 1, 1)
+        genrell_categorie.add_new_widget(key_gemini_input, 4, 1, 1, 3)
 
-        genrell_categorie.add_new_widget(clear_memory_btn, 4, 0, 1, 4)
+        genrell_categorie.add_new_widget(QLabel("Tavily API-Key"), 5, 0, 1, 1)
+        genrell_categorie.add_new_widget(key_tavily_input, 5, 1, 1, 3)
+
+
+        genrell_categorie.add_new_widget(clear_memory_btn, 6, 0, 1, 4)
 
         layout.addWidget(genrell_categorie)
         # </editor-fold>
@@ -2377,6 +2409,12 @@ class MainWindow(QMainWindow):
 
     def restart_app(self):
         self.restart_app_func()
+
+    @has_something_changed
+    def save_new_api_key(self, key, key_type):
+        self.api_keys[key_type] = key
+        with open(self.api_keys_file, "w", encoding="utf-8") as f:
+            json.dump(self.api_keys, f, indent=4, ensure_ascii=False)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

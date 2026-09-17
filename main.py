@@ -1,4 +1,3 @@
-
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
 import json
@@ -6,8 +5,18 @@ import os
 import sys
 import ctypes
 from PySide6.QtGui import QIcon
+from pathlib import Path
 
-with open(r"./assets/settings.json", "r", encoding="utf-8") as file:
+# <editor-fold desc="GPU/CPU SWITCH">
+def get_asset_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+with open(get_asset_path("assets/settings.json"), "r", encoding="utf-8") as file:
     settings = json.load(file)
 
 if settings.get("tts_and_stt_device") == "gpu":
@@ -45,6 +54,7 @@ if settings.get("tts_and_stt_device") == "gpu":
         _original_init(self, *args, **kwargs)
 
     ort.InferenceSession.__init__ = _gpu_forced_init
+# </editor-fold>
 
 import random
 import time
@@ -83,7 +93,8 @@ class AgentOutput(BaseModel):
 # noinspection PyTypeChecker,PyMethodMayBeStatic
 class ORION_GemAI:
     def __init__(self):
-        self.working_dir: str = os.path.abspath("./")
+        self.working_dir = get_asset_path("")
+        print(self.working_dir)
 
         # files and keys
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
@@ -287,6 +298,9 @@ class ORION_GemAI:
 
     def load_api_keys(self):
         self.output("Loading api key...", "log")
+        if not os.path.exists(self.api_key_file):
+            with open(self.api_key_file, "w", encoding="utf-8") as f:
+                json.dump({"gemini": "", "tavily": ""}, f, indent=4, ensure_ascii=False)
         with open(self.api_key_file, "r", encoding="utf-8") as f:
             all_keys = json.load(f)
             self.tavily_api_key = all_keys["tavily"]

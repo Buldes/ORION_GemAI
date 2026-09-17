@@ -226,3 +226,5 @@ simulation.py
 assets/json_files/character_gemini.json
 assets/json_files/character_ollama.json
 assets/gemini-versions
+/ORION
+exe-configs.json
