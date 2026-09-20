@@ -638,11 +638,14 @@ f"""                Website: {url[2]}
 
         metrics = QFontMetrics(self.content_lable.font())
         required_width = metrics.horizontalAdvance(str(text_to_show)) + 8
-        if text_data["role"] != "python_code_script" and required_width > 900:
+        if text_data["role"] != "python_code_script" and text_data["role"] != "search_result" and required_width > 900:
             self.content_lable.setWordWrap(True)
             self.content_lable.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-        self.content_lable.setText(f"<p style='line-height: 150%;'>{str(text_to_show)}</p>")
+        if text_data["role"] != "python_code_script" and text_data["role"] != "search_result":
+            self.content_lable.setText(f"<p style='line-height: 150%;'>{str(text_to_show)}</p>")
+        else:
+            self.content_lable.setText(text_to_show)
 
         # time
         time_text: str = text_data["time"]
@@ -2436,8 +2439,11 @@ if __name__ == "__main__":
         return data
 
     def get_memory():
-        with open("./assets/json_files/memory.json", "r", encoding="utf-8") as mem_file:
-            data = json.load(mem_file)
+        try:
+            with open("./assets/json_files/memory.json", "r", encoding="utf-8") as mem_file:
+                data = json.load(mem_file)
+        except FileNotFoundError:
+            return []
         return data
 
     def save_edited_memory(edited_memory):

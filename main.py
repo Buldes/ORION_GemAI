@@ -171,6 +171,7 @@ class ORION_GemAI:
         self.tavily_api_key: str = ""
         self.tavily = None
         self.tavily_settings: dict = {}
+        self.tavily_init_failed = False
 
         # cmd
         self.allow_cmd_execution: bool = False
@@ -307,7 +308,12 @@ class ORION_GemAI:
 
     def init_tavily_search(self):
         self.output("Loading tavily...", "log")
-        self.tavily = TavilyClient(api_key=self.tavily_api_key)
+        try:
+            self.tavily = TavilyClient(api_key=self.tavily_api_key)
+            self.tavily_init_failed = False
+        except Exception as e:
+            self.output(f"An error occur while trying to initialize Tavily: {e}", "error")
+            self.tavily_init_failed = True
 
     def init_gui(self):
         self.output("Init GUI...", "log")
@@ -749,18 +755,37 @@ class ORION_GemAI:
         self.output(f"Searchin for: {search_item}", "log")
         if not self.allow_tavily_search:
             return "Not allowed"
+        try:
+            response = self.tavily.search(
+                query=search_item,
+                max_results=self.tavily_settings["max_results"],
+                search_depth=self.tavily_settings["search_depth"],
+                exclude_domains=self.tavily_settings["exclude_domains"],
+                topic=self.tavily_settings["topic"],
+                time_range=self.tavily_settings["time_range"],
+                auto_parameters=self.tavily_settings["auto_parameters"]
+            )
 
-        response = self.tavily.search(
-            query=search_item,
-            max_results=self.tavily_settings["max_results"],
-            search_depth=self.tavily_settings["search_depth"],
-            exclude_domains=self.tavily_settings["exclude_domains"],
-            topic=self.tavily_settings["topic"],
-            time_range=self.tavily_settings["time_range"],
-            auto_parameters=self.tavily_settings["auto_parameters"]
-        )
-
-        return response
+            return response
+        except Exception as e:
+            return {
+                "query": search_item,
+                "follow_up_questions": None,
+                "answer": None,
+                "images": [],
+                "results": [
+                    {
+                        "url": "tavily/error/tavily-error",
+                        "title": "Es trat ein Fehler auf",
+                        "content": str(e),
+                        "score": 0.0,
+                        "raw_content": None,
+                        "id": "e2b193-00"
+                    }
+                ],
+                "response_time": None,
+                "request_id": None
+            }
 
     """CMD EXECUTION"""
 
