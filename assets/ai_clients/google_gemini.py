@@ -31,7 +31,7 @@ class GeminiLLM:
         self.output = output_func
 
         # all files
-        self.working_dir = get_asset_path("../..")
+        self.working_dir = get_asset_path("")
         self.api_key_file: str = rf"{self.working_dir}/api_key.json"
         self.json_files: str = rf"{self.working_dir}/assets/json_files/"
         self.chat_history = []
@@ -49,6 +49,7 @@ class GeminiLLM:
         # variables
         self.ai_instructions = None
         self.gemini_api_key = None
+        self.init_failed = False
 
         # init settings
         self.init_character()
@@ -56,9 +57,11 @@ class GeminiLLM:
         self.init_api_key()
 
         # init gemini
-
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-        self.gemini_chat = self.gemini_client.chats.create(model=self.orion_settings['llm_version'])
+        try:
+            self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+            self.gemini_chat = self.gemini_client.chats.create(model=self.orion_settings['llm_version'])
+        except:
+            self.init_failed = True
 
 
     def init_ai_role(self):
@@ -154,6 +157,8 @@ class GeminiLLM:
             self.gemini_api_key = all_keys["gemini"]
 
     def send_message(self, full_prompt):
+        if self.init_failed:
+            return {"error": "self.init_failed is True", "further_process": "", "content": "Es ist ein Fehler aufgetreten. Vermutlich hast du vergessen einen validen API-Key für Google Gemini hinzuzufügen. Du findest dein API key unter aistudio.google.com/api-keys. Bitte geben ihn unter Einstellungen Allgemein ein und starte das Programm neu.", "memory": "", "pythonCode": "" }
         try:
             response = self.gemini_chat.send_message(
                 full_prompt,

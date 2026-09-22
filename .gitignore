@@ -228,3 +228,5 @@ assets/json_files/character_ollama.json
 assets/gemini-versions
 /ORION
 exe-configs.json
+/output
+inno_script.iss

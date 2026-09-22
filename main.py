@@ -1,11 +1,16 @@
 import ctypes
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
-import json
-import os
 import sys
+import os
+
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("orion.assistant.gui.v1")
+if sys.stdout is None:
+  sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+  sys.stderr = open(os.devnull, 'w')
+
+import json
 import ctypes
 from PySide6.QtGui import QIcon
-from pathlib import Path
 
 # <editor-fold desc="GPU/CPU SWITCH">
 def get_asset_path(relative_path):
